@@ -113,25 +113,35 @@ for dom, ref_slots in REF_SYS_DA.items():
 BOOK_SLOT = ['people', 'day', 'stay', 'time']
 
 class UserAgenda(StateTracker):
-    """ The rule-based user policy model by agenda"""
+    """ 基于规则的用户行为策略代理 """
 
     def __init__(self, data_dir, cfg):
         super(UserAgenda, self).__init__(data_dir, cfg)
+        # 最大对话轮数
         self.max_turn = 40
+        # todo 最多连续执行动作数 (待确认)
         self.max_initiative = 4
-        
-        # load stand value
+
+        # ontology_file = value_set.json 只在这里使用
+        # value_set 记录了所有domain的所有slot对应的值
         with open(data_dir + '/' + cfg.ontology_file) as f:
             self.stand_value_dict = json.load(f)
 
+        # 根据 goal_model.pkl 构建用户目标生成器，
+        # goal_model.pkl 中记录了真实数据中的 domain，book，slot， slot-value的出现概率
         self.goal_generator = GoalGenerator(data_dir, cfg,
                                             goal_model_path='processed_data/goal_model.pkl',
                                             corpus_path=cfg.data_file)
 
         self.goal = None
         self.agenda = None
-        
+
     def _action_to_dict(self, das):
+        """
+        将 dialog-actions 转化为 dict 的形式
+        dialog-actions 形式为 domain-intent-slot-p， p为占位符（数字，符号）
+        dict 形式为 {domain-intent:[[slot,value]]}
+        """
         da_dict = {}
         for da, value in das.items():
             domain, intent, slot, p = da.split('-')
@@ -140,12 +150,20 @@ class UserAgenda(StateTracker):
                 da_dict[domint] = []
             da_dict[domint].append([slot, value])
         return da_dict
-    
+
     def _dict_to_vec(self, das):
+        """
+        将 dict 形式转化为 vec格式
+        dict 为上面定义的形式
+        vec 为预先定义好的用户行为向量
+        """
+
+        # 根据配置文件中的 a_dim_usr 预先将 vec 定义为全零向量
         da_vector = torch.zeros(self.cfg.a_dim_usr, dtype=torch.int32)
         for domint in das:
             pairs = das[domint]
             for slot, value in pairs:
+                # 组合成 domain-intent-slot 形式
                 da = '-'.join((domint, slot)).lower()
                 if da in self.cfg.da2idx_u:
                     idx = self.cfg.da2idx_u[da]
@@ -158,23 +176,23 @@ class UserAgenda(StateTracker):
         self.topic = ''
         self.goal = Goal(self.goal_generator, seed=random_seed)
         self.agenda = Agenda(self.goal)
-        
+
         dummy_state, dummy_goal = init_session(-1, self.cfg)
         init_goal(dummy_goal, dummy_state['goal_state'], self.goal.domain_goals, self.cfg)
-        
+
         domain_ordering = self.goal.domains
         dummy_state['next_available_domain'] = domain_ordering[0]
         dummy_state['invisible_domains'] = domain_ordering[1:]
-        
+
         dummy_state['user_goal'] = dummy_goal
         self.evaluator.add_goal(dummy_goal)
-        
+
         usr_a, terminal = self.predict(None, {})
         usr_a = self._dict_to_vec(usr_a)
         usr_a[-1] = 1 if terminal else 0
         init_state = self.update_belief_usr(dummy_state, usr_a)
         return init_state
-                
+
     def step(self, s, sys_a):
         """
         interact with simulator for one sys-user turn
@@ -188,7 +206,7 @@ class UserAgenda(StateTracker):
             da_dict = self._action_to_dict(current_s['sys_action'])
             usr_a, terminal = self.predict(None, da_dict)
             usr_a = self._dict_to_vec(usr_a)
-        
+
         # update state with user_act
         usr_a[-1] = 1 if terminal else 0
         next_s = self.update_belief_usr(current_s, usr_a)
@@ -283,7 +301,7 @@ class UserAgenda(StateTracker):
 
         if slot not in self.stand_value_dict[domain]:
             return value
-        
+
         if domain == 'taxi' and slot == 'phone':
             return value
 
