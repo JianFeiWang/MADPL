@@ -3,13 +3,14 @@
 @author: keshuichonglx 
 """
 
-import random
 import json
-import torch
+import random
 from copy import deepcopy
+
+import torch
 from goal_generator import GoalGenerator
-from utils import init_session, init_goal
 from tracker import StateTracker
+from utils import init_session, init_goal
 
 REF_USR_DA = {
     'Attraction': {
@@ -91,7 +92,6 @@ REF_SYS_DA = {
     },
 }
 
-
 DEF_VAL_UNK = '?'  # Unknown
 DEF_VAL_DNC = 'don\'t care'  # Do not care
 DEF_VAL_NUL = 'none'  # for none
@@ -111,6 +111,7 @@ for dom, ref_slots in REF_SYS_DA.items():
 
 # def book slot
 BOOK_SLOT = ['people', 'day', 'stay', 'time']
+
 
 class UserAgenda(StateTracker):
     """ 基于规则的用户行为策略代理 """
@@ -167,85 +168,105 @@ class UserAgenda(StateTracker):
                 da = '-'.join((domint, slot)).lower()
                 if da in self.cfg.da2idx_u:
                     idx = self.cfg.da2idx_u[da]
+                    # 由于动作空间是预先定义好的，因此直接对对应的index置1即可
                     da_vector[idx] = 1
         return da_vector
 
     def reset(self, random_seed=None):
-        """ Build new Goal and Agenda for next session """
+        """
+        为下一段对话创建用户目标 goal 和代理器 agenda
+        """
         self.time_step = 0
+        # 当前对话的主题，这里就是指 domain
         self.topic = ''
+
+        # 创建用户目标，需要使用到目标生成器
         self.goal = Goal(self.goal_generator, seed=random_seed)
+        # 创建用户代理器
         self.agenda = Agenda(self.goal)
 
+        # 初始化 状态和目标
+        # 状态采用 dict 形式，区别于 向量形式状态
+        # 状态中包含 下一个domain， 下一个之后的所有domain， 用户目标，目标状态等
         dummy_state, dummy_goal = init_session(-1, self.cfg)
         init_goal(dummy_goal, dummy_state['goal_state'], self.goal.domain_goals, self.cfg)
-
         domain_ordering = self.goal.domains
         dummy_state['next_available_domain'] = domain_ordering[0]
         dummy_state['invisible_domains'] = domain_ordering[1:]
-
         dummy_state['user_goal'] = dummy_goal
+
+        # 将初始的用户目标加入到 evaluator 中，用于评价该用户目标是否完成
         self.evaluator.add_goal(dummy_goal)
 
+        # 默认为用户先说话，因此先生成用户的动作
         usr_a, terminal = self.predict(None, {})
         usr_a = self._dict_to_vec(usr_a)
         usr_a[-1] = 1 if terminal else 0
+        # 并通过用户的动作 更新初始的状态
         init_state = self.update_belief_usr(dummy_state, usr_a)
         return init_state
 
     def step(self, s, sys_a):
         """
-        interact with simulator for one sys-user turn
+        接收来自系统方的动作，执行一个回合的用户侧动作
         """
-        # update state with sys_act
+        # 根据系统方的动作，更新状态
         current_s = self.update_belief_sys(s, sys_a)
         if current_s['others']['terminal']:
-            # user has terminated the session at last turn
+            # 在上个用户侧对话时，用户已经结束的会话, 则将terminal信号设置为True， 同时清空用户动作向量
             usr_a, terminal = torch.zeros(self.cfg.a_dim_usr, dtype=torch.int32), True
         else:
+            # todo 这里的 sys_action 和 sys_a 有什么区别？
             da_dict = self._action_to_dict(current_s['sys_action'])
+            # 这里的状态是通过 agenda代理器来维护的所以设置为None
             usr_a, terminal = self.predict(None, da_dict)
             usr_a = self._dict_to_vec(usr_a)
 
-        # update state with user_act
+        # 更新系统状态
         usr_a[-1] = 1 if terminal else 0
         next_s = self.update_belief_usr(current_s, usr_a)
         return next_s, terminal
 
     def predict(self, state, sys_action):
         """
-        Predict an user act based on state and preorder system action.
-        Args:
-            state (tuple): Dialog state.
-            sys_action (tuple): Preorder system action.s
-        Returns:
-            action (tuple): User act.
-            session_over (boolean): True to terminate session, otherwise session continues.
-            reward (float): Reward given by user.
+        根据预定义好的系统动作预测和状态，预测用户动作
+        输入为{domain-intent:[[slot,slot-value]]}
+        输出为{Domain-Intent:[[REF_USR_DA_M~slot, slot-value]]
         """
         if self.time_step >= self.max_turn:
             self.agenda.close_session()
         else:
+            # 将sys_action 转化为 agenda可以读取的格式
             sys_action = self._transform_sysact_in(sys_action)
+            # 根据系统动作和用户目标，更新代理器
             self.agenda.update(sys_action, self.goal)
             if self.goal.task_complete():
                 self.agenda.close_session()
 
         # A -> A' + user_action
+        # 根据用户代理器当前记录的状态得到对应的用户动作
         action = self.agenda.get_action(self.max_initiative)
 
         # Is there any action to say?
+        # 如果代理器没有待执行的任务，则会话终止
         session_over = self.agenda.is_empty()
 
         # transform to DA
+        # 将action 转化为 正常的形式
         action = self._transform_usract_out(action)
 
         return action, session_over
 
     def _transform_usract_out(self, action):
+        """
+        将agenda生成的用户动作转化为输出形式
+        用户动作形式 {domain-intent:[[slot, slot-value]]
+        转化之后的形式 {Domain-Intent:[[REF_USR_DA_M~slot, slot-value]]
+        """
         new_action = {}
         for act in action.keys():
             if '-' in act:
+                # general domain 另作了处理， REF中也没有进行定义
                 if 'general' not in act:
                     (dom, intent) = act.split('-')
                     new_act = dom.capitalize() + '-' + intent.capitalize()
@@ -261,6 +282,11 @@ class UserAgenda(StateTracker):
         return new_action
 
     def _transform_sysact_in(self, action):
+        """
+        将系统方生成的动作转化为agenda读取的格式
+        系统动作形式 {domain-intent:[[slot,slot-value]]}
+        转化之后的形式{domain-intent:[[REF_SYS_DA_M~slot, normalized-value]]}
+        """
         new_action = {}
         if not isinstance(action, dict):
             print('illegal da:', action)
@@ -276,35 +302,48 @@ class UserAgenda(StateTracker):
                 if dom in REF_SYS_DA_M.keys():
                     new_list = []
                     for pairs in action[act]:
-                        if (not isinstance(pairs, list) and not isinstance(pairs, tuple)) or\
-                                (len(pairs) < 2) or\
+                        if (not isinstance(pairs, list) and not isinstance(pairs, tuple)) or \
+                                (len(pairs) < 2) or \
                                 (not isinstance(pairs[0], str) or not isinstance(pairs[1], str)):
                             print('illegal pairs:', pairs)
                             continue
 
                         if REF_SYS_DA_M[dom].get(pairs[0].lower(), None) is not None:
-                            new_list.append([REF_SYS_DA_M[dom][pairs[0].lower()], self._normalize_value(dom, intent, REF_SYS_DA_M[dom][pairs[0].lower()], pairs[1])])
+                            # slot 转化为 REF_SYS_DA_M~slot，
+                            # slot-value 转化为 normalize之后的值
+                            new_list.append([REF_SYS_DA_M[dom][pairs[0].lower()],
+                                             self._normalize_value(dom, intent, REF_SYS_DA_M[dom][pairs[0].lower()],
+                                                                   pairs[1])])
 
                     if len(new_list) > 0:
                         new_action[act.lower()] = new_list
             else:
+                # 对于general的动作，只是将对应的act，进行了转小写,实际上也应该是小写形式
                 new_action[act.lower()] = action[act]
 
         return new_action
 
     def _normalize_value(self, domain, intent, slot, value):
+        """
+        对value进行后处理, 针对stand_value对value进行细微的调整
+        """
+        # 对所有的request 统一输出？符号作为value
         if intent == 'request':
             return DEF_VAL_UNK
 
+        # 如果domain或者slot不在stand_value_dict中，则直接返回
         if domain not in self.stand_value_dict.keys():
             return value
-
         if slot not in self.stand_value_dict[domain]:
             return value
 
+        # 如果domain为taxi且slot为phone，直接返回
         if domain == 'taxi' and slot == 'phone':
             return value
 
+        # 如果domain和slot均在stand_value_dict中，但是value不在对应的value_list中
+        # 首先检查是否为格式上不一致，对于格式不一致的，统一为标准格式
+        # 否则直接返回value
         value_list = self.stand_value_dict[domain][slot]
         if value not in value_list and value != 'none':
             v0 = ' '.join(value.split())
@@ -316,7 +355,12 @@ class UserAgenda(StateTracker):
             print('illegal value: %s, slot: %s domain: %s' % (value, slot, domain))
         return value
 
+
 def check_constraint(slot, val_usr, val_sys):
+    """
+    判断系统动作是否满足用户动作的约束，
+    满足返回False，如果用户动作和系统动作不一致，则返回True
+    """
     try:
         if slot == 'arriveBy':
             val1 = int(val_usr.split(':')[0]) * 100 + int(val_usr.split(':')[1])
@@ -335,6 +379,7 @@ def check_constraint(slot, val_usr, val_sys):
     except:
         return False
 
+
 class Goal(object):
     """ User Goal Model Class. """
 
@@ -344,20 +389,23 @@ class Goal(object):
         Args:
             goal_generator (GoalGenerator): Goal Gernerator.
         """
+        # 随机生成用户目标
         self.domain_goals = goal_generator.get_user_goal(seed)
+        # 单独拎出来domains
         self.domains = list(self.domain_goals['domain_ordering'])
         del self.domain_goals['domain_ordering']
 
         for domain in self.domains:
+            # 对目标中的reqt，由list转化为dict形式，value为DEF_VAL_UNK符号
             if 'reqt' in self.domain_goals[domain].keys():
                 self.domain_goals[domain]['reqt'] = {slot: DEF_VAL_UNK for slot in self.domain_goals[domain]['reqt']}
-
+            # 如果目标中存在book，则新增booked属性为DEF_VAL_UNK符号
             if 'book' in self.domain_goals[domain].keys():
                 self.domain_goals[domain]['booked'] = DEF_VAL_UNK
 
     def task_complete(self):
         """
-        Check that all requests have been met
+        用户目标中的reqt和booked均已经赋值，表示任务已经完成
         Returns:
             (boolean): True to accomplish.
         """
@@ -374,30 +422,36 @@ class Goal(object):
         return True
 
     def next_domain_incomplete(self):
-        # request
+        """
+        判断下一个回合是否需要切换主题domain
+        """
+        # 按照domains的顺序依次判断是否需要切换主题
         for domain in self.domains:
-            # reqt
+            # 如果当前主题的用户请求还没有完成，则继续返回当前domain，
+            # 意图为'reqt',
+            # slot中如果name存在未知请求列表中，优先询问name，否则返回未知列表
             if 'reqt' in self.domain_goals[domain]:
                 requests = self.domain_goals[domain]['reqt']
                 unknow_reqts = [key for (key, val) in requests.items() if val in NOT_SURE_VALS]
                 if len(unknow_reqts) > 0:
                     return domain, 'reqt', ['name'] if 'name' in unknow_reqts else unknow_reqts
 
-            # book
+            # 如果需求已经完成，还没有进入booked状态，则返回book内容，
+            # 如果存在fail_book 则优先返回 fail_book
+            # fail_book 表示当前预定会失败，失败之后会选择book返回
             if 'booked' in self.domain_goals[domain]:
                 if self.domain_goals[domain]['booked'] in NOT_SURE_VALS:
                     return domain, 'book', \
-                           self.domain_goals[domain]['fail_book'] if 'fail_book' in self.domain_goals[domain].keys() else self.domain_goals[domain]['book']
-
+                           self.domain_goals[domain]['fail_book'] if 'fail_book' in self.domain_goals[
+                               domain].keys() else self.domain_goals[domain]['book']
+        # 所有任务均已完成，返回三个NONE
         return None, None, None
 
 
 class Agenda(object):
     def __init__(self, goal: Goal):
         """
-        Build a new agenda from goal
-        Args:
-            goal (Goal): User goal.
+        通过用户目标构建Agenda
         """
 
         def random_sample(data, minimum=0, maximum=1000):
