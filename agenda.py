@@ -118,9 +118,10 @@ class UserAgenda(StateTracker):
 
     def __init__(self, data_dir, cfg):
         super(UserAgenda, self).__init__(data_dir, cfg)
-        # 最大对话轮数
+        # 最大对话轮数, 貌似没有用到
+        # 结束会话的情况只有三种，nooffer， nobook， task_complete
         self.max_turn = 40
-        # todo 最多连续执行动作数 (待确认)
+        # 最多连续执行动作数
         self.max_initiative = 4
 
         # ontology_file = value_set.json 只在这里使用
@@ -209,6 +210,8 @@ class UserAgenda(StateTracker):
     def step(self, s, sys_a):
         """
         接收来自系统方的动作，执行一个回合的用户侧动作
+        通过 predict 方法更新 agenda的状态，用于支持 agenda的动作预测，
+        通过调用继承的 update_belief_x 方法提供符合系统方的状态变化需求，为系统方的动作决策提供依据
         """
         # 根据系统方的动作，更新状态
         current_s = self.update_belief_sys(s, sys_a)
@@ -230,9 +233,11 @@ class UserAgenda(StateTracker):
     def predict(self, state, sys_action):
         """
         根据预定义好的系统动作预测和状态，预测用户动作
+        任务完成结束会话
         输入为{domain-intent:[[slot,slot-value]]}
         输出为{Domain-Intent:[[REF_USR_DA_M~slot, slot-value]]
         """
+        # todo 没有对应time_step的更新操作？所以会话操作仅通过update方法中的close_session实现和任务完成结束会话
         if self.time_step >= self.max_turn:
             self.agenda.close_session()
         else:
@@ -359,7 +364,8 @@ class UserAgenda(StateTracker):
 def check_constraint(slot, val_usr, val_sys):
     """
     判断系统动作是否满足用户动作的约束，
-    满足返回False，如果用户动作和系统动作不一致，则返回True
+    返回False，系统动作和用户动作一致
+    返回True， 用户动作和系统动作不一致
     """
     try:
         if slot == 'arriveBy':
@@ -385,9 +391,8 @@ class Goal(object):
 
     def __init__(self, goal_generator: GoalGenerator, seed=None):
         """
-        create new Goal by random
-        Args:
-            goal_generator (GoalGenerator): Goal Gernerator.
+        随机创建用户目标， 包括domain信息
+        用户目标记录了请求完成情况和预定情况
         """
         # 随机生成用户目标
         self.domain_goals = goal_generator.get_user_goal(seed)
@@ -430,13 +435,14 @@ class Goal(object):
             # 如果当前主题的用户请求还没有完成，则继续返回当前domain，
             # 意图为'reqt',
             # slot中如果name存在未知请求列表中，优先询问name，否则返回未知列表
+            # 对应的操作需要对用户目标进行赋值更新
             if 'reqt' in self.domain_goals[domain]:
                 requests = self.domain_goals[domain]['reqt']
                 unknow_reqts = [key for (key, val) in requests.items() if val in NOT_SURE_VALS]
                 if len(unknow_reqts) > 0:
                     return domain, 'reqt', ['name'] if 'name' in unknow_reqts else unknow_reqts
 
-            # 如果需求已经完成，还没有进入booked状态，则返回book内容，
+            # 如果reqt需求已经完成，还没有进入booked状态，则返回book内容，
             # 如果存在fail_book 则优先返回 fail_book
             # fail_book 表示当前预定会失败，失败之后会选择book返回
             if 'booked' in self.domain_goals[domain]:
@@ -451,29 +457,38 @@ class Goal(object):
 class Agenda(object):
     def __init__(self, goal: Goal):
         """
-        通过用户目标构建Agenda
+        初始化动作
+        通过用户目标构建Agenda, 依赖堆栈完成动作序列
         """
 
         def random_sample(data, minimum=0, maximum=1000):
             return random.sample(data, random.randint(min(len(data), minimum), min(len(data), maximum)))
 
+        # 定义开头语和结束语
         self.CLOSE_ACT = 'general-bye'
         self.HELLO_ACT = 'general-greet'
+        # 记录推进的动作数量
         self.__cur_push_num = 0
-
+        # 堆栈，并提供相应的维护操作
         self.__stack = []
 
         # there is a 'bye' action at the bottom of the stack
+        # 栈底为结束语动作
         self.__push(self.CLOSE_ACT)
 
+        # 依次遍历 domain, 加载各个domain的首轮用户提供信息(非欢迎语)
         for idx in range(len(goal.domains) - 1, -1, -1):
             domain = goal.domains[idx]
 
-            # inform
+            # 存在fail_info时，优先提供fail_info的信息，
+            # 表示通过提供的信息，系统无法找到合适的资源，系统方预先是不知道该信息是否为fail_info
             if 'fail_info' in goal.domain_goals[domain]:
+                # 随机选取info信息中的几个，作为输出的动作
                 for slot in random_sample(goal.domain_goals[domain]['fail_info'].keys(),
                                           len(goal.domain_goals[domain]['fail_info'])):
                     self.__push(domain + '-inform', slot, goal.domain_goals[domain]['fail_info'][slot])
+            # 存在info时，提供info的信息,
+            # 同样也是随机提供
             elif 'info' in goal.domain_goals[domain]:
                 for slot in random_sample(goal.domain_goals[domain]['info'].keys(),
                                           len(goal.domain_goals[domain]['info'])):
@@ -483,28 +498,41 @@ class Agenda(object):
 
     def update(self, sys_action, goal: Goal):
         """
-        update Goal by current agent action and current goal. { A' + G" + sys_action -> A" }
-        Args:
-            sys_action (tuple): Preorder system action.s
-            goal (Goal): User Goal
+        通过系统方的动作和用户目标完成情况，
+        更新的内容为用户动作栈和用户目标
+        { A' + G" + sys_action -> A" }
         """
+        # 每次更新操作时会清空cur_push_num的数量
         self.__cur_push_num = 0
+        # 通过系统动作，更新current_domain系统变量为当前动作指定的domain,
+        # 系统可能提供多种domain的动作，
+        # todo 这里并没有对系统动作做进一步的排序处理？所以默认系统每次只能处理一个domain的任务
         self._update_current_domain(sys_action, goal)
 
+        # 优先对nooffer和nobook进行domain更新,
+        # 且在更新完成之后，判断是否完成会话
         for diaact in sys_action.keys():
             slot_vals = sys_action[diaact]
+            # 如果系统动作中包含nooffer，noffer表示数据库无法提供相应的数据
             if 'nooffer' in diaact:
+                # 更新该 domain 的信息, 更新内容为该domain的用户动作
                 if self.update_domain(diaact, slot_vals, goal):
+                    # 如果会话结束，则直接返回
                     return
+            # 如果系统动作中包含nobook，nobook表示数据库无法提供相应的订购信息
             elif 'nobook' in diaact:
                 if self.update_booking(diaact, slot_vals, goal):
+                    # 如果会话结束，则直接返回
                     return
 
         for diaact in sys_action.keys():
+            # 上述nooffer和nobook都已经完成更新，不需要重复
             if 'nooffer' in diaact or 'nobook' in diaact:
                 continue
 
             slot_vals = sys_action[diaact]
+            # 更新用户动作栈, 更新用户目标状态
+            # booking为domain，表示进入booking环节, booking环节也包括inform，book，request等动作
             if 'booking' in diaact:
                 if self.update_booking(diaact, slot_vals, goal):
                     return
@@ -517,22 +545,32 @@ class Agenda(object):
 
         unk_dom, unk_type, data = goal.next_domain_incomplete()
         if unk_dom is not None:
-            if unk_type == 'reqt' and not self._check_reqt_info(unk_dom) and not self._check_reqt(unk_dom):
+            # 第一个check表示用户没有提供inform意图，或者inform和slot在BOOK_LIST中
+            # 第二个check表示用户当前当做栈中没有未完成的请求
+            # 如果上述两个条件不满足，表示用户当前还有话要说或者话要问，继续执行完成当前用户的动作即可
+            # 如果当前条件均满足，则继续下一个询问
+            if unk_type == 'reqt' \
+                    and not self._check_reqt_info(unk_dom) \
+                    and not self._check_reqt(unk_dom):
                 for slot in data:
                     self._push_item(unk_dom + '-request', slot, DEF_VAL_UNK)
-            elif unk_type == 'book' and not self._check_reqt_info(unk_dom) and not self._check_book_info(unk_dom):
+            # book 会重新提供所有book所需要inform的slot信息
+            elif unk_type == 'book' \
+                    and not self._check_reqt_info(unk_dom) \
+                    and not self._check_book_info(unk_dom):
                 for (slot, val) in data.items():
                     self._push_item(unk_dom + '-inform', slot, val)
 
     def update_booking(self, diaact, slot_vals, goal: Goal):
         """
-        Handel Book-XXX
-        :param diaact:      Dial-Act
-        :param slot_vals:   slot value pairs
-        :param goal:        Goal
-        :return:            True:user want to close the session. False:session is continue
+        接收系统 booking domain的相关动作，包括 book， inform， nobook 和 request
+        通过系统动作 更新用户目标的未完成请求，删除重复的用户reqt请求
+        纠正系统提供的错误inform信息, 并更新订购状态
+        更改无法满足的订购条件, 实在无法满足则结束会话
+        提供booking所需要的实体内容
         """
         _, intent = diaact.split('-')
+        # 由于booking为domain， 因此只能通过cur_domain来确认是否满足goal.domains
         domain = self.cur_domain
 
         if domain not in goal.domains:
@@ -550,21 +588,26 @@ class Agenda(object):
                 if domain == 'train' and slot == 'time':
                     slot = 'duration'
 
+                # 系统主动提供的slot满足了用户reqt的需求，则删除用户栈中对该需求的咨询
                 if slot in g_reqt:
+                    # 当前domain没有inform动作，或者inform不在reqt中
                     if not self._check_reqt_info(domain):
                         self._remove_item(domain + '-request', slot)
+                        # 更新用户目标状态
                         if value in NOT_SURE_VALS:
                             g_reqt[slot] = '\"' + value + '\"'
                         else:
                             g_reqt[slot] = value
-
+                # 如果系统提供的信息和用户提供的信息不一致，则重新声明用户提供的信息，
+                # 同时将info_right标志位置失败
                 elif slot in g_fail_info and value != g_fail_info[slot]:
                     self._push_item(domain + '-inform', slot, g_fail_info[slot])
                     info_right = False
                 elif len(g_fail_info) <= 0 and slot in g_info and check_constraint(slot, g_info[slot], value):
                     self._push_item(domain + '-inform', slot, g_info[slot])
                     info_right = False
-
+                # 系统提供的信息和订购提供的信息也不一致，重新声明用户提供的信息
+                # 同时将info_right标志位置失败
                 elif slot in g_fail_book and value != g_fail_book[slot]:
                     self._push_item(domain + '-inform', slot, g_fail_book[slot])
                     info_right = False
@@ -576,12 +619,16 @@ class Agenda(object):
                     pass
 
             if intent == 'book' and info_right:
-                # booked ok
+                # 如果系统意图为book，表示已经完成订购，且book时提供的info核对信息正确，则将booked的状态修改为DEF_VAL_BOOKED
                 if 'booked' in goal.domain_goals[domain]:
                     goal.domain_goals[domain]['booked'] = DEF_VAL_BOOKED
+                # 并返回感谢语
                 self._push_item('general-thank')
 
         elif intent in ['nobook']:
+            # book和reqt的区别在于，reqt为用户查询的信息，不一定和订购业务相关，book为用户的订购业务，不一定和查询业务相关，
+            # 当然可以即查询同时订购, 二者同时存在时，查询优先
+            # 该部分的逻辑和nooffer一致
             if len(g_fail_book) > 0:
                 # Discard fail_book data and update the book data to the stack
                 for slot in g_book.keys():
@@ -590,6 +637,9 @@ class Agenda(object):
 
                 # change fail_info name
                 goal.domain_goals[domain]['fail_book_fail'] = goal.domain_goals[domain].pop('fail_book')
+
+            # 如果存在订购需求，同时没有fail_book，则表示确实没有满足符合订购需求的信息，
+            # 则结束会话
             elif 'booked' in goal.domain_goals[domain].keys():
                 self.close_session()
                 return True
@@ -599,36 +649,47 @@ class Agenda(object):
                 if domain == 'train' and slot == 'time':
                     slot = 'duration'
 
+                # 如果请求的信息也是用户需要咨询的信息，则暂时不考虑该系统动作
                 if slot in g_reqt:
                     pass
+                # 如果有符合要求的答案，则直接返回
                 elif slot in g_fail_info:
                     self._push_item(domain + '-inform', slot, g_fail_info[slot])
                 elif len(g_fail_info) <= 0 and slot in g_info:
                     self._push_item(domain + '-inform', slot, g_info[slot])
-
                 elif slot in g_fail_book:
                     self._push_item(domain + '-inform', slot, g_fail_book[slot])
                 elif len(g_fail_book) <= 0 and slot in g_book:
                     self._push_item(domain + '-inform', slot, g_book[slot])
 
+                # 如果本domain中没有提供相应的信息
                 else:
-
+                    # 对于打车场景可以进行特殊处理, 打车意图可以依赖之前场景中提供的地点
                     if domain == 'taxi' and (slot == 'destination' or slot == 'departure'):
+                        # 遍历之前提到所有包含address的domain
                         places = [dom for dom in goal.domains[: goal.domains.index('taxi')] if
                                   'address' in goal.domain_goals[dom]['reqt']]
-
+                        # slot 为destination 且至少前面提供了一个地点
                         if len(places) >= 1 and slot == 'destination' and \
                                 goal.domain_goals[places[-1]]['reqt']['address'] not in NOT_SURE_VALS:
+                            # 按照最后一个场景提供的地点提供答案
                             self._push_item(domain + '-inform', slot, goal.domain_goals[places[-1]]['reqt']['address'])
 
+                        # 如果问题是询问departure， 且之前绵连两个场景提到地点
                         elif len(places) >= 2 and slot == 'departure' and \
                                 goal.domain_goals[places[-2]]['reqt']['address'] not in NOT_SURE_VALS:
+                            # 按照倒数第二个场景提供答案
                             self._push_item(domain + '-inform', slot, goal.domain_goals[places[-2]]['reqt']['address'])
 
+                        # 如果没有，则以50%的概率返回dont care，
+                        # 没有出发地和目的地，还挺浪漫，
+                        # 后面应该会处理的吧
                         elif random.random() < 0.5:
                             self._push_item(domain + '-inform', slot, DEF_VAL_DNC)
 
                     elif random.random() < 0.5:
+                        # 50%的概率提供DEF_VAL_DNC回复
+                        # 另外50%则表示，无法提供，会话可能会终结
                         self._push_item(domain + '-inform', slot, DEF_VAL_DNC)
 
         return False
@@ -642,19 +703,22 @@ class Agenda(object):
         :return:            True:user want to close the session. False:session is continue
         """
         domain, intent = diaact.split('-')
-
+        # 如果系统动作对应不上目标domain，则结束更新，并返回会话继续
         if domain not in goal.domains:
             return False
 
+        # 用户目标中记录了各个domain的reqt，info，fail_info,book,fail_book信息
         g_reqt = goal.domain_goals[domain].get('reqt', dict({}))
         g_info = goal.domain_goals[domain].get('info', dict({}))
         g_fail_info = goal.domain_goals[domain].get('fail_info', dict({}))
         g_book = goal.domain_goals[domain].get('book', dict({}))
         g_fail_book = goal.domain_goals[domain].get('fail_book', dict({}))
 
+        # 系统提供信息
         if intent in ['inform', 'recommend', 'offerbook', 'offerbooked']:
             info_right = True
             for [slot, value] in slot_vals:
+                # 更新用户目标
                 if slot in g_reqt:
                     if not self._check_reqt_info(domain):
                         self._remove_item(domain + '-request', slot)
@@ -663,29 +727,33 @@ class Agenda(object):
                         else:
                             g_reqt[slot] = value
 
+                # 纠正系统信息
                 elif slot in g_fail_info and value != g_fail_info[slot]:
                     self._push_item(domain + '-inform', slot, g_fail_info[slot])
                     info_right = False
                 elif len(g_fail_info) <= 0 and slot in g_info and check_constraint(slot, g_info[slot], value):
                     self._push_item(domain + '-inform', slot, g_info[slot])
                     info_right = False
-
                 elif slot in g_fail_book and value != g_fail_book[slot]:
                     self._push_item(domain + '-inform', slot, g_fail_book[slot])
                     info_right = False
                 elif len(g_fail_book) <= 0 and slot in g_book and value != g_book[slot]:
                     self._push_item(domain + '-inform', slot, g_book[slot])
                     info_right = False
-
                 else:
+                    # 无用信息，不操作
                     pass
 
+            # 系统提供offerbooked 表示预定完成，需要更新booked的状态，
+            # domain + offerbooked 等同于 booking-book 表示系统已经完成预定
+            # 题外话 domain + offerbook 等同于 booking-inform 为系统向用户提供是否预定请求
             if intent == 'offerbooked' and info_right:
                 # booked ok
                 if 'booked' in goal.domain_goals[domain]:
                     goal.domain_goals[domain]['booked'] = DEF_VAL_BOOKED
                 self._push_item('general-thank')
 
+        # request 情况和update_booking一样
         elif intent in ['request']:
             for [slot, _] in slot_vals:
                 if slot in g_reqt:
@@ -720,38 +788,46 @@ class Agenda(object):
                     elif random.random() < 0.5:
                         self._push_item(domain + '-inform', slot, DEF_VAL_DNC)
 
+        # nooffer 情况
         elif intent in ['nooffer']:
+            # 如果存在fail_info, 则
             if len(g_fail_info) > 0:
-                # update info data to the stack
+                # 针对fail_info 中的错误信息（没有提供的信息、和info异同的信息），
+                # 再次提供声明
                 for slot in g_info.keys():
                     if (slot not in g_fail_info) or (slot in g_fail_info and g_fail_info[slot] != g_info[slot]):
                         self._push_item(domain + '-inform', slot, g_info[slot])
 
-                # change fail_info name
+                # 修改fail_info的名字，保证下次不会在执行到这里
                 goal.domain_goals[domain]['fail_info_fail'] = goal.domain_goals[domain].pop('fail_info')
+
+            # 如果用户需求仍然得不到满足，则结束会话
             elif len(g_reqt.keys()) > 0:
                 self.close_session()
                 return True
 
+        # 有多个满足要求的答案，向用户询问选择答案
         elif intent in ['select']:
-            # delete Choice
+            # 对select动作，删除choice slot，因为choice并不是实质的判断依据，
+            # choice 为可供选择的答案数
             slot_vals = [[slot, val] for [slot, val] in slot_vals if slot != 'choice']
 
             if len(slot_vals) > 0:
+                # 选择第一个slot，作为选择依据，提供选择
                 slot = slot_vals[0][0]
-
                 if slot in g_fail_info:
                     self._push_item(domain + '-inform', slot, g_fail_info[slot])
                 elif len(g_fail_info) <= 0 and slot in g_info:
                     self._push_item(domain + '-inform', slot, g_info[slot])
-
                 elif slot in g_fail_book:
                     self._push_item(domain + '-inform', slot, g_fail_book[slot])
                 elif len(g_fail_book) <= 0 and slot in g_book:
                     self._push_item(domain + '-inform', slot, g_book[slot])
 
+                # 如果用户目标中没有规定对应的slot的值
                 else:
                     if not self._check_reqt_info(domain):
+                        # 随机从答案中选择一个值
                         [slot, value] = random.choice(slot_vals)
                         self._push_item(domain + '-inform', slot, value)
 
@@ -762,6 +838,9 @@ class Agenda(object):
         return False
 
     def update_general(self, diaact, slot_vals, goal: Goal):
+        """
+        对于 general 不做特殊处理,直接过
+        """
         domain, intent = diaact.split('-')
 
         if intent == 'bye':
@@ -777,16 +856,13 @@ class Agenda(object):
 
     def close_session(self):
         """ Clear up all actions """
+        # 清空动作栈，压入结束语
         self.__stack = []
         self.__push(self.CLOSE_ACT)
 
     def get_action(self, initiative=1):
         """
-        get multiple acts based on initiative
-        Args:
-            initiative (int): number of slots , just for 'inform'
-        Returns:
-            action (dict): user diaact
+        从堆栈中取出动作， initiative为相同diaact下的连续动作去除数量
         """
         diaacts, slots, values = self.__pop(initiative)
         action = {}
@@ -799,13 +875,16 @@ class Agenda(object):
 
     def is_empty(self):
         """
-        Is the agenda already empty
-        Returns:
-            (boolean): True for empty, False for not.
+        栈为空
         """
         return len(self.__stack) <= 0
 
     def _update_current_domain(self, sys_action, goal: Goal):
+        """
+        得到当前最新的domain。 此时的sys_action包含了所有的系统动作,
+        所以当sys_action为booking时，不会改变cur_domain的值，只有真正出现domain时，才会改变cur_domain的值,
+        这就要求booking domain只能和对应的domain同时出现，不能和新的domain同时出现
+        """
         for diaact in sys_action.keys():
             domain, _ = diaact.split('-')
             if domain in goal.domains:
@@ -828,6 +907,9 @@ class Agenda(object):
         self.__cur_push_num += 1
 
     def _check_item(self, diaact, slot=None):
+        """
+        判断 diaact 和 slot 对应的动作是否在栈中
+        """
         for idx in range(len(self.__stack)):
             if slot is None:
                 if self.__stack[idx]['diaact'] == diaact:
@@ -838,34 +920,61 @@ class Agenda(object):
         return False
 
     def _check_reqt(self, domain):
+        """
+        用户动作栈中存在请求意图未完成
+        否则表示用户动作栈中没有需要咨询的动作
+        """
         for idx in range(len(self.__stack)):
             if self.__stack[idx]['diaact'] == domain + '-request':
                 return True
         return False
 
     def _check_reqt_info(self, domain):
+        """
+        判断用户动作栈中提供的slot信息是否不存在于BOOK_SLOT中,
+        取否表示，用户动作没有提供inform意图，或者inform的slot在BOOK_SLOT中
+        """
         for idx in range(len(self.__stack)):
-            if self.__stack[idx]['diaact'] == domain + '-inform' and self.__stack[idx]['slot'] not in BOOK_SLOT:
+            # 用户动作栈中存在info动作，
+            # 且 用户堆栈中info动作的slot不在BOOK_SLOT中
+            if self.__stack[idx]['diaact'] == domain + '-inform' \
+                    and self.__stack[idx]['slot'] not in BOOK_SLOT:
                 return True
         return False
 
     def _check_book_info(self, domain):
+        """
+        判断用户动作栈中提供的slot信息是否为BOOK_SLOT，
+        取否表示，用户没有提供inform动作，或者inform的slot不在BOOK_SLOT中
+        """
         for idx in range(len(self.__stack)):
-            if self.__stack[idx]['diaact'] == domain + '-inform' and self.__stack[idx]['slot'] in BOOK_SLOT:
+            # 用户动作中存在info，且提供的信息为BOOK_SLOT中
+            if self.__stack[idx]['diaact'] == domain + '-inform' \
+                    and self.__stack[idx]['slot'] in BOOK_SLOT:
                 return True
         return False
 
     def __check_next_diaact_slot(self):
+        """
+        返回用户动作栈中的diaact和slot
+        """
         if len(self.__stack) > 0:
             return self.__stack[-1]['diaact'], self.__stack[-1]['slot']
         return None, None
 
     def __check_next_diaact(self):
+        """
+        返回动作栈中的diaact
+        """
         if len(self.__stack) > 0:
             return self.__stack[-1]['diaact']
         return None
 
     def __push(self, diaact, slot=DEF_VAL_NUL, value=DEF_VAL_NUL):
+        """
+        向动作栈中压入动作，
+        动作的形式为 {diaact:diaact, slot:slot, value:value}
+        """
         self.__stack.append({'diaact': diaact, 'slot': slot, 'value': value})
 
     def __pop(self, initiative=1):
@@ -874,7 +983,10 @@ class Agenda(object):
         values = []
 
         p_diaact, p_slot = self.__check_next_diaact_slot()
+        # 如果diaact为inform， 且slot信息在BOOK_SLOT中
         if p_diaact.split('-')[1] == 'inform' and p_slot in BOOK_SLOT:
+            # 则一口气返回所有加入的信息，或者返回10条信息，
+            # 每次返回还是需要判断一下是不是符合条件
             for _ in range(10 if self.__cur_push_num == 0 else self.__cur_push_num):
                 try:
                     item = self.__stack.pop(-1)
@@ -885,6 +997,7 @@ class Agenda(object):
                     cur_diaact = item['diaact']
 
                     next_diaact, next_slot = self.__check_next_diaact_slot()
+                    # 停止加入的条件：没有动作，动作和之前的不一致，动作不为inform BOOK_SLOT
                     if next_diaact is None or \
                             next_diaact != cur_diaact or \
                             next_diaact.split('-')[1] != 'inform' or next_slot not in BOOK_SLOT:
@@ -902,6 +1015,7 @@ class Agenda(object):
                     cur_diaact = item['diaact']
 
                     next_diaact = self.__check_next_diaact()
+                    # 对此特殊情况是request slot name 只能以开头的方式出现
                     if next_diaact is None or \
                             next_diaact != cur_diaact or \
                             (cur_diaact.split('-')[1] == 'request' and item['slot'] == 'name'):
