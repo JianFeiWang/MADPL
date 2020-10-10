@@ -14,6 +14,12 @@ from utils import init_session, init_goal, state_vectorize, action_vectorize, \
     state_vectorize_user, action_vectorize_user, discard, reload
 
 def expand_da(meta):
+    """
+    对元数据？进行一些变化，
+    对于 request请求 插入？符号
+    对于 slot为none， 插入none
+    对于 slot不为none， 插入slot出现的次数
+    """
     for k, v in meta.items():
         domain, intent = k.split('-')
         if intent.lower() == "request":
@@ -33,31 +39,42 @@ def expand_da(meta):
 
 
 def add_domain_mask(data):
+    """
+
+    """
+    # 限制需要从文档中读取的domains，如果需要从源文件单独提取某个domain，可以通过修改这个来实现
     all_domains = ["train", "hotel", "restaurant", "attraction", "taxi", "police", "hospital"]
     parts = ["train", "valid", "test"]
+    # 分别对不同的parts进行处理
     for part in parts:
         dataset = data[part]
         domains_in_order_dict = {} # {session_id:domains_in_order}
         domains_in_order = []
         current_session_id = ""
         for turn in dataset:
+            # 判断是否为新的会话
             session_id = turn["others"]["session_id"]
             if session_id != current_session_id:
                 if current_session_id != "":
+                    # 对上一个会话session，记录domains_in_order信息
                     domains_in_order_dict[current_session_id] = domains_in_order
                 domains_in_order = []
                 current_session_id = session_id
+
             if "trg_user_action" in turn:
+                # 通过用户执行动作来决定domain的变更
                 user_das = turn["trg_user_action"]
                 for user_da in user_das:
                     [domain, intent, slot] = user_da.split('-')
                     if domain in all_domains and domain not in domains_in_order:
+                        # 按照顺序记录出现的domain
                         domains_in_order.append(domain)
-        domains_in_order_dict[current_session_id] = domains_in_order # for last dialog
+        domains_in_order_dict[current_session_id] = domains_in_order # for last dialog 最后一个session
         
         current_session_id = ""
         next_available_domain = ""
         invisible_domains = []
+        # 为每个turn提供next_available_domain和invisible_domains信息
         for turn in dataset:
             session_id = turn["others"]["session_id"]
             if session_id != current_session_id:
@@ -74,6 +91,7 @@ def add_domain_mask(data):
 
             if "trg_user_action" in turn:
                 user_das = turn["trg_user_action"]
+                # 依次更新next_available_domain 和 invisible_domains
                 for user_da in user_das:
                     [domain, intent, slot] = user_da.split('-')
                     if domain == next_available_domain:
@@ -86,11 +104,17 @@ class DataManager():
     """Offline data manager"""
     
     def __init__(self, data_dir, cfg):
+        """
+        DataManager的两种加载方式，第一种是直接通过源文件进行加载，还有一种是通过已经处理好的数据进行加载
+        DataManager 只会在预训练的时候使用到
+        """
+        # 主要实现对data和goal的管理
         self.data = {}
         self.goal = {}
         
         self.data_dir_new = data_dir + '/processed_data'
         if os.path.exists(self.data_dir_new):
+            # 对于已经划分并转化后的train valid test的文件进行读取
             logging.info('Load processed data file')
             for part in ['train','valid','test']:
                 with open(self.data_dir_new + '/' + part + '.json', 'r') as f:

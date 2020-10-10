@@ -10,6 +10,9 @@ from goal_generator import GoalGenerator
 
 class Controller(StateTracker):
     def __init__(self, data_dir, config):
+        """
+        负责构建目标生成器
+        """
         super(Controller, self).__init__(data_dir, config)
         self.goal_gen = GoalGenerator(data_dir, config,
                                       goal_model_path='processed_data/goal_model.pkl',
@@ -17,7 +20,7 @@ class Controller(StateTracker):
             
     def reset(self, random_seed=None):
         """
-        init a user goal and return init state
+        随机生成用户目标，初始化状态，同时更新evaluator的判定目标
         """
         self.time_step = 0
         self.topic = ''
@@ -37,7 +40,7 @@ class Controller(StateTracker):
         
     def step_sys(self, s, sys_a):
         """
-        interact with simulator for one sys-user turn
+        根据系统执行动作，更新系统状态
         """
         # update state with sys_act
         current_s = self.update_belief_sys(s, sys_a)
@@ -45,6 +48,9 @@ class Controller(StateTracker):
         return current_s
     
     def step_usr(self, s, usr_a):
+        """
+        根据用户执行动作，更新用户状态
+        """
         current_s = self.update_belief_usr(s, usr_a)
         terminal = current_s['others']['terminal']
         return current_s, terminal
