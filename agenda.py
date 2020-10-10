@@ -110,6 +110,9 @@ for dom, ref_slots in REF_SYS_DA.items():
     REF_SYS_DA_M[dom]['none'] = None
 
 # def book slot
+# 这里对于用户是否进行预定没有提供态度判断，而是通过用户是否提供了BOOK_SLOT中定义的任意slot的信息来判断是否完成预定。
+# 或者直接通过Inform-None-None来确定
+# todo 没有继续按照上述两种方式提供信息，则表示没有预定成功？
 BOOK_SLOT = ['people', 'day', 'stay', 'time']
 
 

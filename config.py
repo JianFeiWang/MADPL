@@ -6,22 +6,33 @@
 class Config():
     
     def __init__(self):
+        """
+        初始化 配置
+        """
         self.domain = []
         self.intent = []
         self.slot = []
         self.da = []
         self.da_usr = []
         self.data_file = ''
-        self.db_domains = []
-        self.belief_domains = []
+        self.db_domains = [] #定义可以被从数据库检索的domain
+        self.belief_domains = [] #定义用户可以咨询和订阅的domain信息， 如果想控制用户的请求domain的限制，改变它就对了
         
     def init_inform_request(self):
+        """
+        收集用户可以用于inform的信息和request的动作，
+        以及真实可以从数据库中 requestable 的动作
+        inform_da 和 request_da 表示用户真实可能执行的动作，作为系统状态的一部分，系统状态就是要收集用户的动作信息
+        requestable 暂时还没有发现使用到的地方,在数据库查询中会使用到
+        inform_da_user 和 request_da_user 表示用户目标中可能需要执行的动作，作为用户状态的一部分，用户状态只需要关心自己的需要的信息是否收集完成
+        """
         self.inform_da = []
         self.request_da = []
-        self.requestable = []
+        self.requestable = [] # todo 干什么用的？
         
         for da in self.da_usr:
             d, i, s = da.split('-')
+            # slot为none 对应 inform表示肯定
             if s == 'none':
                 continue
             key = '-'.join([d,s])
@@ -34,7 +45,7 @@ class Config():
                 
         self.inform_da_usr = []
         self.request_da_usr = []
-        for da in self.da_goal:
+        for da in self.da_goal: # 用户目标中提到的动作
             d, i, s = da.split('-')
             key = '-'.join([d,s])
             if i == 'inform':
@@ -68,9 +79,17 @@ class Config():
         self.idx2da_u = dict((v, k) for k, v in self.da2idx_u.items())
         
     def init_dim(self):
+        """
+        模型的维度
+        """
+        # 系统执行动作+用户执行动作+用户inform信息+用户request信息+用户关心的domains信息+数据库查询信息+是否完成会话（1维）
         self.s_dim = len(self.da) + len(self.da_usr) + len(self.inform_da) + len(self.request_da) + len(self.belief_domains) + 6*len(self.db_domains) + 1#len(self.requestable) + 1
+        # 系统执行动作+用户执行动作+目标inform信息*2+目标request信息+用户关心的domains信息
+        # todo 需要关注为什么inform_da_usr 的维度需要乘以2
         self.s_dim_usr = len(self.da) + len(self.da_usr) + len(self.inform_da_usr)*2 + len(self.request_da_usr) + len(self.belief_domains)#*2
+        # 系统执行动作
         self.a_dim = len(self.da)
+        # 用户执行动作 + 是否完成会话
         self.a_dim_usr = len(self.da_usr) + 1
 
 
