@@ -41,6 +41,7 @@ class Config():
             elif i == 'request' and key not in self.request_da:
                 self.request_da.append(key)
                 if d in self.db_domains and s != 'ref':
+                    # ref 是在query之后查询到有对应的信息才会临时赋值给数据记录的
                     self.requestable.append(key)
                 
         self.inform_da_usr = []

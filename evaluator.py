@@ -5,27 +5,31 @@ from copy import deepcopy
 from dbquery import DBQuery
 
 informable = \
-{'attraction': ['area', 'name', 'type'],
- 'restaurant': ['addr', 'day', 'food', 'name', 'people', 'price', 'time'],
- 'train': ['day', 'people', 'arrive', 'leave', 'depart', 'dest'],
- 'hotel': ['area', 'day', 'internet', 'name', 'parking', 'people', 'price', 'stars', 'stay', 'type'],
- 'taxi': ['arrive', 'leave', 'depart', 'dest'],
- 'hospital': ['department'],
- 'police': []}
+    {'attraction': ['area', 'name', 'type'],
+     'restaurant': ['addr', 'day', 'food', 'name', 'people', 'price', 'time'],
+     'train': ['day', 'people', 'arrive', 'leave', 'depart', 'dest'],
+     'hotel': ['area', 'day', 'internet', 'name', 'parking', 'people', 'price', 'stars', 'stay', 'type'],
+     'taxi': ['arrive', 'leave', 'depart', 'dest'],
+     'hospital': ['department'],
+     'police': []}
 
 requestable = \
-{'attraction': ['post', 'phone', 'addr', 'fee', 'area', 'type'],
- 'restaurant': ['addr', 'phone', 'post', 'price', 'area', 'food'],
- 'train': ['ticket', 'time', 'id', 'arrive', 'leave'],
- 'hotel': ['addr', 'post', 'phone', 'price', 'internet', 'parking', 'area', 'type', 'stars'],
- 'taxi': ['car', 'phone'],
- 'hospital': ['phone'],
- 'police': ['addr', 'post']}
+    {'attraction': ['post', 'phone', 'addr', 'fee', 'area', 'type'],
+     'restaurant': ['addr', 'phone', 'post', 'price', 'area', 'food'],
+     'train': ['ticket', 'time', 'id', 'arrive', 'leave'],
+     'hotel': ['addr', 'post', 'phone', 'price', 'internet', 'parking', 'area', 'type', 'stars'],
+     'taxi': ['car', 'phone'],
+     'hospital': ['phone'],
+     'police': ['addr', 'post']}
 
 time_re = re.compile(r'^(([01]\d|2[0-3]):([0-5]\d)|24:00)$')
 NUL_VALUE = ["", "dont care", 'not mentioned', "don't care", "dontcare", "do n't care"]
 
+
 class MultiWozEvaluator():
+    """
+    评估MultiWoz任务是否完成
+    """
     def __init__(self, data_dir):
         self.sys_da_array = []
         self.usr_da_array = []
@@ -41,12 +45,18 @@ class MultiWozEvaluator():
         self.dbs = db.dbs
 
     def _init_dict(self):
+        """
+        根据 belief_domains 初始化domain的为key的字典
+        """
         dic = {}
         for domain in self.belief_domains:
             dic[domain] = {}
         return dic
 
     def _init_dict_booked(self):
+        """
+        为每个domain提供一个标注位
+        """
         dic = {}
         for domain in self.belief_domains:
             dic[domain] = None
@@ -54,18 +64,17 @@ class MultiWozEvaluator():
 
     def add_goal(self, goal):
         """
-        init goal and array
-        args:
-            goal: dict[domain] dict[slot] value
+        初始化最终的用户目标，以及一些相应的统计量。
         """
         self.sys_da_array = []
         self.usr_da_array = []
         self.goal = deepcopy(goal)
         for domain in self.belief_domains:
+            # 使用final替换原有的目标，由于在生成目标时，原有的目标是无法实现的
             if 'final' in self.goal[domain]:
                 for key in self.goal[domain]['final']:
                     self.goal[domain][key] = self.goal[domain]['final'][key]
-                del(self.goal[domain]['final'])
+                del (self.goal[domain]['final'])
         self.cur_domain = ''
         self.complete_domain = []
         self.booked = self._init_dict_booked()
@@ -80,7 +89,7 @@ class MultiWozEvaluator():
             domain, intent, slot, p = da_w_p.split('-')
             value = str(da_turn[da_w_p])
             da = '-'.join([domain, intent, slot])
-            self.sys_da_array.append(da+'-'+value)
+            self.sys_da_array.append(da + '-' + value)
 
             if value != 'none':
                 if da == 'booking-book-ref':
@@ -104,7 +113,7 @@ class MultiWozEvaluator():
         for da in da_turn:
             domain, intent, slot = da.split('-')
             value = str(da_turn[da])
-            self.usr_da_array.append(da+'-'+value)
+            self.usr_da_array.append(da + '-' + value)
             if domain in self.belief_domains and domain != self.cur_domain:
                 self.cur_domain = domain
 
@@ -145,7 +154,8 @@ class MultiWozEvaluator():
                     elif k == 'arrive':
                         try:
                             v_constraint = int(v.split(':')[0]) * 100 + int(v.split(':')[1])
-                            v_select = int(entity['arriveBy'].split(':')[0]) * 100 + int(entity['arriveBy'].split(':')[1])
+                            v_select = int(entity['arriveBy'].split(':')[0]) * 100 + int(
+                                entity['arriveBy'].split(':')[1])
                             if v_constraint >= v_select:
                                 match += 1
                         except (ValueError, IndexError):
@@ -170,7 +180,7 @@ class MultiWozEvaluator():
         for da in sys_history:
             domain, intent, slot, value = da.split('-', 3)
             if intent in ['inform', 'recommend', 'offerbook', 'offerbooked'] and \
-                domain in domains and value.strip() not in NUL_VALUE:
+                    domain in domains and value.strip() not in NUL_VALUE:
                 inform_slot[domain].add(slot)
         for domain in domains:
             for k, v in goal[domain].items():
@@ -182,10 +192,10 @@ class MultiWozEvaluator():
             for k in inform_slot[domain]:
                 # exclude slots that are informed by users
                 if k not in goal[domain] \
-                and (k in requestable[domain] or k == 'ref'):
+                        and (k in requestable[domain] or k == 'ref'):
                     FP += 1
         return TP, FP, FN
-    
+
     def _inform_F1_goal_usr(self, goal, usr_history, domains=None):
         """
         judge if all the constraint/request information is expressed
@@ -218,11 +228,11 @@ class MultiWozEvaluator():
                         FN += 1
             for k in inform_slot[domain]:
                 if k not in goal[domain] \
-                and k in informable[domain]:
+                        and k in informable[domain]:
                     FP += 1
             for k in request_slot[domain]:
                 if k not in goal[domain] \
-                and (k in requestable[domain] or k == 'ref'):
+                        and (k in requestable[domain] or k == 'ref'):
                     FP += 1
         return TP, FP, FN
 
@@ -233,7 +243,7 @@ class MultiWozEvaluator():
             return time_re.match(value)
         elif key == "day":
             return value.lower() in ["monday", "tuesday", "wednesday", "thursday", "friday",
-                              "saturday", "sunday"]
+                                     "saturday", "sunday"]
         elif key == "duration":
             return 'minute' in value
         elif key == "internet" or key == "parking":
@@ -263,8 +273,8 @@ class MultiWozEvaluator():
                     goal[domain]['book'] = True
             for da in self.usr_da_array:
                 d, i, s, v = da.split('-', 3)
-                if d in self.belief_domains and i == 'inform'\
-                    and s in informable[d]:
+                if d in self.belief_domains and i == 'inform' \
+                        and s in informable[d]:
                     goal[d][s] = v
         score = self._match_rate_goal(goal, self.booked)
         if aggregate:
@@ -310,8 +320,8 @@ class MultiWozEvaluator():
         inform_sess = self.inform_F1(ref2goal)
         # book rate == 1 & inform recall == 1
         if (book_sess == 1 and inform_sess[1] == 1) \
-        or (book_sess == 1 and inform_sess[1] is None) \
-        or (book_sess is None and inform_sess[1] == 1):
+                or (book_sess == 1 and inform_sess[1] is None) \
+                or (book_sess is None and inform_sess[1] == 1):
             return 1
         else:
             return 0
@@ -352,8 +362,8 @@ class MultiWozEvaluator():
             inform_rec = None
 
         if (match_rate == 1 and inform_rec == 1) \
-        or (match_rate == 1 and inform_rec is None) \
-        or (match_rate is None and inform_rec == 1):
+                or (match_rate == 1 and inform_rec is None) \
+                or (match_rate is None and inform_rec == 1):
             self.complete_domain.append(domain)
             return 1
         else:
