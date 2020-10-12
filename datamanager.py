@@ -362,7 +362,8 @@ class DataManager():
                 next_turn_data['belief_state'] = turn_data['final_belief_state']
                 # 统计next_s
                 next_s.append(torch.Tensor(state_vectorize(next_turn_data, cfg, db, True)))
-                # 统计奖励, 对于系统动作，判决任务是否完成作为最终奖励依据
+                # 统计奖励, 对于系统动作，判决任务是否完成作为最终奖励依据,
+                # 系统是否完成了真实用户动作所提出的订阅请求，且系统是否回答了真实用户动作所咨询的所有问题
                 reward = 20 if evaluator.task_success(False) else -5
                 r.append(reward)
                 # 结束标志位
@@ -428,7 +429,7 @@ class DataManager():
                 next_turn_data['trg_user_action'] = {}
                 next_turn_data['goal_state'] = datas[idx + 1]['final_goal_state']
                 next_s.append(torch.Tensor(state_vectorize_user(next_turn_data, cfg, evaluator.cur_domain)))
-                # 对于用户侧任务是否成功，采用inform_F1进行判决
+                # 对于用户侧任务是否成功，采用inform_F1进行判决, 1表示的是召回率，就是用户目标的所有需求和提供都已经完成了
                 reward = 20 if evaluator.inform_F1(ansbysys=False)[1] == 1. else -5
                 r.append(reward)
                 t.append(1)

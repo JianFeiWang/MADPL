@@ -28,7 +28,7 @@ NUL_VALUE = ["", "dont care", 'not mentioned', "don't care", "dontcare", "do n't
 
 class MultiWozEvaluator():
     """
-    评估MultiWoz任务是否完成
+    评估 MultiWoz 任务是否完成
     """
     def __init__(self, data_dir):
         self.sys_da_array = []
@@ -55,7 +55,7 @@ class MultiWozEvaluator():
 
     def _init_dict_booked(self):
         """
-        为每个domain提供一个标注位
+        为每个domain提供一个标志位
         """
         dic = {}
         for domain in self.belief_domains:
@@ -82,6 +82,7 @@ class MultiWozEvaluator():
     def add_sys_da(self, da_turn):
         """
         add sys_da into array
+        更新 sys_da_array [domain-intent-slot-value]
         args:
             da_turn: dict[domain-intent-slot-p] value
         """
@@ -92,6 +93,8 @@ class MultiWozEvaluator():
             self.sys_da_array.append(da + '-' + value)
 
             if value != 'none':
+                # 根据系统动作完成订购信息的收集, 从这里可以看出来，
+                # multiwoz中 bokking-book-ref, train-offerbooked-ref,train-inform-ref,taxi-inform-car 是对等的
                 if da == 'booking-book-ref':
                     book_domain, ref_num = value.split('-')
                     if not self.booked[book_domain] and re.match(r'^\d{8}$', ref_num):
@@ -107,6 +110,8 @@ class MultiWozEvaluator():
     def add_usr_da(self, da_turn):
         """
         add usr_da into array
+        更新 user_da_array, user_da_array会记录所有轮的用户数据
+        同时更新cur_domain, 因为当前交谈的中心由用户来决定
         args:
             da_turn: dict[domain-intent-slot] value
         """
@@ -120,6 +125,8 @@ class MultiWozEvaluator():
     def _match_rate_goal(self, goal, booked_entity, domains=None):
         """
         judge if the selected entity meets the constraint
+        计算返回的各个domain的订购信息是否满足用户目标的限定,
+        输出用户目标限制的满足比例
         """
         if domains is None:
             domains = self.belief_domains
@@ -127,14 +134,17 @@ class MultiWozEvaluator():
         for domain in domains:
             if 'book' in goal[domain]:
                 tot = 0
+                # 统计goal在domain下，需要提供的信息量
                 for key, value in goal[domain].items():
                     if value != '?':
                         tot += 1
                 entity = booked_entity[domain]
                 if entity is None:
+                    # 没有预定成功，直接0分
                     score.append(0)
                     continue
                 if domain in ['taxi', 'hospital', 'police']:
+                    # 这三类，只要出现book，直接1分？
                     score.append(1)
                     continue
                 match = 0
@@ -142,6 +152,7 @@ class MultiWozEvaluator():
                     if v == '?':
                         continue
                     if k in ['dest', 'depart', 'name'] or k not in self.mapping[domain]:
+                        # 对于dest depart name 不计入需要提供的数据范围，todo ？
                         tot -= 1
                     elif k == 'leave':
                         try:
@@ -149,7 +160,7 @@ class MultiWozEvaluator():
                             v_select = int(entity['leaveAt'].split(':')[0]) * 100 + int(entity['leaveAt'].split(':')[1])
                             if v_constraint <= v_select:
                                 match += 1
-                        except (ValueError, IndexError):
+                        except (ValueError, IndexError):# ？
                             match += 1
                     elif k == 'arrive':
                         try:
@@ -170,18 +181,25 @@ class MultiWozEvaluator():
     def _inform_F1_goal(self, goal, sys_history, domains=None):
         """
         judge if all the requested information is answered
+        判断用户目标和系统答案的匹配情况
         """
         if domains is None:
             domains = self.belief_domains
         inform_slot = {}
         for domain in domains:
             inform_slot[domain] = set()
+
+        # TP 表示需要咨询，同时系统提供了
+        # FN 表示需要咨询，但是系统没有提供
+        # FP 表示不需要咨询，系统强行提供了
         TP, FP, FN = 0, 0, 0
+        # 记录系统提供的所有有效slot
         for da in sys_history:
             domain, intent, slot, value = da.split('-', 3)
             if intent in ['inform', 'recommend', 'offerbook', 'offerbooked'] and \
                     domain in domains and value.strip() not in NUL_VALUE:
                 inform_slot[domain].add(slot)
+        # 搜集所有goal中需要咨询的slot
         for domain in domains:
             for k, v in goal[domain].items():
                 if v == '?':
@@ -199,6 +217,7 @@ class MultiWozEvaluator():
     def _inform_F1_goal_usr(self, goal, usr_history, domains=None):
         """
         judge if all the constraint/request information is expressed
+        判断用户侧执行动作是否和最初设定的用户目标一致
         """
         if domains is None:
             domains = self.belief_domains
@@ -208,12 +227,19 @@ class MultiWozEvaluator():
             inform_slot[domain] = set()
             request_slot[domain] = set()
         TP, FP, FN = 0, 0, 0
+        # 收集用户动作
         for da in usr_history:
             domain, intent, slot, value = da.split('-', 3)
             if intent == 'inform':
                 inform_slot[domain].add(slot)
             elif intent == 'request':
                 request_slot[domain].add(slot)
+
+        # TP: 用户需要咨询，且真实已经完成咨询动作
+        #     用户需要提供，且真实已经完成提供动作
+        # FN: 用户需要咨询，尚且没有进行咨询动作
+        #     用户需要提供，尚且没有进行提供动作
+        # FP: 用户不需要提供或者咨询，但是强行提供或咨询了
         for domain in domains:
             for k, v in goal[domain].items():
                 if v == '?':
@@ -226,6 +252,7 @@ class MultiWozEvaluator():
                         TP += 1
                     else:
                         FN += 1
+
             for k in inform_slot[domain]:
                 if k not in goal[domain] \
                         and k in informable[domain]:
@@ -237,6 +264,7 @@ class MultiWozEvaluator():
         return TP, FP, FN
 
     def _check_value(self, key, value):
+        """针对特殊的slot，判断value是否符合要求"""
         if key == "area":
             return value.lower() in ["centre", "east", "south", "west", "north"]
         elif key == "arriveBy" or key == "leaveAt":
@@ -264,13 +292,20 @@ class MultiWozEvaluator():
             return True
 
     def match_rate(self, ref2goal=True, aggregate=True):
+        """
+        由系统agent使用，
+        判断系统返回的订购信息，是否满足最初的目标设定（或者说实际的用户提供的信息）
+        """
+        # 直接用最初的目标设定
         if ref2goal:
             goal = self.goal
         else:
+        # 使用用户真实完成的动作
             goal = self._init_dict()
             for domain in self.belief_domains:
                 if domain in self.goal and 'book' in self.goal[domain]:
                     goal[domain]['book'] = True
+            # 收集用户执行的inform动作
             for da in self.usr_da_array:
                 d, i, s, v = da.split('-', 3)
                 if d in self.belief_domains and i == 'inform' \
@@ -278,14 +313,20 @@ class MultiWozEvaluator():
                     goal[d][s] = v
         score = self._match_rate_goal(goal, self.booked)
         if aggregate:
+            # 对接过取平均
             return np.mean(score) if score else None
         else:
             return score
 
-    def inform_F1(self, ref2goal=True, ansbysys=True, aggregate=True):
+    def inform_F1(self, ref2goal=True, ans_by_sys=True, aggregate=True):
+        """
+        查看系统动作与用户目标的完成情况，(默认)
+        或者用户动作与用户目标的匹配情况
+        """
         if ref2goal:
             goal = self.goal
         else:
+            # 记录用户执行动作
             goal = self._init_dict()
             for da in self.usr_da_array:
                 d, i, s, v = da.split('-', 3)
@@ -294,10 +335,11 @@ class MultiWozEvaluator():
                         goal[d][s] = v
                     elif i == 'request':
                         goal[d][s] = '?'
-        if ansbysys:
+        if ans_by_sys:
             TP, FP, FN = self._inform_F1_goal(goal, self.sys_da_array)
         else:
             TP, FP, FN = self._inform_F1_goal_usr(goal, self.usr_da_array)
+        # 是否集成为准确召回等的表示形式
         if aggregate:
             try:
                 rec = TP / (TP + FN)
@@ -315,6 +357,7 @@ class MultiWozEvaluator():
     def task_success(self, ref2goal=True):
         """
         judge if all the domains are successfully completed
+        检测任务的完成情况，指的是所有的domain
         """
         book_sess = self.match_rate(ref2goal)
         inform_sess = self.inform_F1(ref2goal)
@@ -329,9 +372,11 @@ class MultiWozEvaluator():
     def domain_success(self, domain, ref2goal=True):
         """
         judge if the domain (subtask) is successfully completed
+        判断某个domain的任务是否已经完成
         """
         if domain not in self.goal:
             return None
+        # 对于已经奖励过一次的不能重复奖励
         if domain in self.complete_domain:
             return 0
 
