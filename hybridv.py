@@ -6,6 +6,7 @@
 import torch
 import torch.nn as nn
 
+
 class HybridValue(nn.Module):
     def __init__(self, cfg):
         super(HybridValue, self).__init__()
@@ -18,17 +19,17 @@ class HybridValue(nn.Module):
                                        nn.ReLU(),
                                        nn.Linear(cfg.hs_dim, cfg.hs_dim),
                                        nn.Tanh())
-        
+
         self.net_sys = nn.Sequential(nn.Linear(cfg.hs_dim, cfg.h_dim),
                                      nn.ReLU(),
                                      nn.Linear(cfg.h_dim, 1))
         self.net_usr = nn.Sequential(nn.Linear(cfg.hs_dim, cfg.h_dim),
                                      nn.ReLU(),
                                      nn.Linear(cfg.h_dim, 1))
-        self.net_global = nn.Sequential(nn.Linear(cfg.hs_dim+cfg.hs_dim, cfg.h_dim),
+        self.net_global = nn.Sequential(nn.Linear(cfg.hs_dim + cfg.hs_dim, cfg.h_dim),
                                         nn.ReLU(),
                                         nn.Linear(cfg.h_dim, 1))
-        
+
     def forward(self, s, character):
         if character == 'sys':
             h_s_sys = self.net_sys_s(s)

@@ -30,6 +30,7 @@ class MultiWozEvaluator():
     """
     评估 MultiWoz 任务是否完成
     """
+
     def __init__(self, data_dir):
         self.sys_da_array = []
         self.usr_da_array = []
@@ -160,7 +161,7 @@ class MultiWozEvaluator():
                             v_select = int(entity['leaveAt'].split(':')[0]) * 100 + int(entity['leaveAt'].split(':')[1])
                             if v_constraint <= v_select:
                                 match += 1
-                        except (ValueError, IndexError):# ？
+                        except (ValueError, IndexError):  # ？
                             match += 1
                     elif k == 'arrive':
                         try:
@@ -300,7 +301,7 @@ class MultiWozEvaluator():
         if ref2goal:
             goal = self.goal
         else:
-        # 使用用户真实完成的动作
+            # 使用用户真实完成的动作
             goal = self._init_dict()
             for domain in self.belief_domains:
                 if domain in self.goal and 'book' in self.goal[domain]:

@@ -309,7 +309,7 @@ class GoalGenerator:
                     if random.random() < cnt_slot['info']['name']:
                         domain_goal['info'] = {'name': domain_goal['info']['name']}
                     else:
-                        #或者删掉name
+                        # 或者删掉name
                         del domain_goal['info']['name']
 
                 # 对于taxi 和train， 采用一定的概率删除leaveAt和arriveBy中的一个，不然答案就唯一了

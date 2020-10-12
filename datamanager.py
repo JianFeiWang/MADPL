@@ -575,6 +575,7 @@ class Dataset_Policy(data.Dataset):
     """
     简单封装用于policy有监督预训练的训练数据
     """
+
     def __init__(self, s, a):
         self.s = s
         self.a = a
