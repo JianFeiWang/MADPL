@@ -97,8 +97,8 @@ SELECTABLE_SLOTS = {
     'Police': [],
 }
 
-INFORMABLE_SLOTS = ["Fee", "Addr", "Area", "Stars", "Internet", "Department", "Choice", "Ref", "Food", "Type", "Price",\
-                    "Stay", "Phone", "Post", "Day", "Name", "Car", "Leave", "Time", "Arrive", "Ticket", None, "Depart",\
+INFORMABLE_SLOTS = ["Fee", "Addr", "Area", "Stars", "Internet", "Department", "Choice", "Ref", "Food", "Type", "Price", \
+                    "Stay", "Phone", "Post", "Day", "Name", "Car", "Leave", "Time", "Arrive", "Ticket", None, "Depart", \
                     "People", "Dest", "Parking", "Open", "Id"]
 
 REQUESTABLE_SLOTS = ['Food', 'Area', 'Fee', 'Price', 'Type', 'Department', 'Internet', 'Parking', 'Stars', 'Type']
@@ -113,7 +113,9 @@ digit = '0123456789'
 
 
 class SystemRule(StateTracker):
-    ''' Rule-based bot. Implemented for Multiwoz dataset. '''
+    ''' Rule-based bot. Implemented for Multiwoz dataset.
+        模拟系统agent的实现
+    '''
 
     recommend_flag = -1
     choice = ""
@@ -129,20 +131,21 @@ class SystemRule(StateTracker):
         self.last_state = init_belief_state()
         self.time_step = 0
         self.topic = ''
+        # todo 模拟系统为什么还需要goal?
         self.goal = self.goal_gen.get_user_goal(random_seed)
-        
+
         dummy_state, dummy_goal = init_session(-1, self.cfg)
         init_goal(dummy_goal, dummy_state['goal_state'], self.goal, self.cfg)
-        
+
         domain_ordering = self.goal['domain_ordering']
         dummy_state['next_available_domain'] = domain_ordering[0]
         dummy_state['invisible_domains'] = domain_ordering[1:]
-        
+
         dummy_state['user_goal'] = dummy_goal
         self.evaluator.add_goal(dummy_goal)
-        
+
         return dummy_state
-        
+
     def _action_to_dict(self, das):
         da_dict = {}
         for da, value in das.items():
@@ -156,7 +159,7 @@ class SystemRule(StateTracker):
                 da_dict[domint] = []
             da_dict[domint].append([slot.capitalize(), value])
         return da_dict
-    
+
     def _dict_to_vec(self, das):
         da_vector = torch.zeros(self.cfg.a_dim, dtype=torch.int32)
         expand_da(das)
@@ -168,18 +171,21 @@ class SystemRule(StateTracker):
                     idx = self.cfg.da2idx[da]
                     da_vector[idx] = 1
         return da_vector
-    
+
     def step(self, s, usr_a):
         """
         interact with simulator for one user-sys turn
         """
         # update state with user_act
+        # 主要更新user_action, goal_state
         current_s = self.update_belief_usr(s, usr_a)
+
+        # 系统操作部分
         da_dict = self._action_to_dict(current_s['user_action'])
         state = self._update_state(da_dict)
         sys_a = self.predict(state)
         sys_a = self._dict_to_vec(sys_a)
-        
+
         # update state with sys_act
         next_s = self.update_belief_sys(current_s, sys_a)
         return next_s
@@ -209,14 +215,17 @@ class SystemRule(StateTracker):
         self.last_state = state
 
         for user_act in user_action:
+            # 根据每条用户动作做出相应的回复
             domain, intent_type = user_act.split('-')
 
             # Respond to general greetings
             if domain == 'general':
+                # 通用答复
                 self._update_greeting(user_act, state, DA)
 
             # Book taxi for user
             elif domain == 'Taxi':
+                # taxi 订购答复
                 self._book_taxi(user_act, state, DA)
 
             elif domain == 'Booking':
@@ -234,6 +243,7 @@ class SystemRule(StateTracker):
             self._judge_booking(user_act, user_action, DA)
 
             if 'Booking-Book' in DA:
+                # 完成booking之后的其他操作没有意义
                 if random.random() < 0.5:
                     DA['general-reqmore'] = []
                 user_acts = []
@@ -248,6 +258,9 @@ class SystemRule(StateTracker):
         return DA
 
     def _update_state(self, user_act=None):
+        """
+        通过读取user_act， 更新 belief_state, request_state, user_action
+        """
         if not isinstance(user_act, dict):
             raise Exception('Expect user_act to be <class \'dict\'> type but get {}.'.format(type(user_act)))
         previous_state = self.last_state
@@ -256,8 +269,10 @@ class SystemRule(StateTracker):
         for domain_type in user_act.keys():
             domain, tpe = domain_type.lower().split('-')
             if domain in ['unk', 'general', 'booking']:
+                # 跳过一些不会更新状态的domain
                 continue
             if tpe == 'inform':
+                # inform 状态更新belief_State
                 for k, v in user_act[domain_type]:
                     k = REF_SYS_DA[domain.capitalize()].get(k, k)
                     if k is None:
@@ -271,7 +286,7 @@ class SystemRule(StateTracker):
                     assert 'book' in domain_dic
 
                     if k in domain_dic['semi']:
-                        nvalue =  v
+                        nvalue = v
                         new_belief_state[domain]['semi'][k] = nvalue
                     elif k in domain_dic['book']:
                         new_belief_state[domain]['book'][k] = v
@@ -284,6 +299,7 @@ class SystemRule(StateTracker):
                         with open('unknown_slot.log', 'a+') as f:
                             f.write('unknown slot name <{}> of domain <{}>\n'.format(k, domain))
             elif tpe == 'request':
+                # request 更新request_State
                 for k, v in user_act[domain_type]:
                     k = REF_SYS_DA[domain.capitalize()].get(k, k)
                     if domain not in new_request_state:
@@ -295,9 +311,8 @@ class SystemRule(StateTracker):
         new_state['belief_state'] = new_belief_state
         new_state['request_state'] = new_request_state
         new_state['user_action'] = user_act
-        
-        return new_state
 
+        return new_state
 
     def _update_greeting(self, user_act, state, DA):
         """ General request / inform. """
@@ -314,19 +329,22 @@ class SystemRule(StateTracker):
             DA['general-welcome'] = []
 
     def _book_taxi(self, user_act, state, DA):
-        """ Book a taxi for user. """
+        """ Book a taxi for user.
+            taxi不需要查询数据库，因此只要必须要的信息收集到，就一定能订购到
+        """
 
         blank_info = []
         for info in ['departure', 'destination']:
             if state['belief_state']['taxi']['semi'] == "":
                 info = REF_USR_DA['Taxi'].get(info, info)
                 blank_info.append(info)
-        if state['belief_state']['taxi']['semi']['leaveAt'] == "" and state['belief_state']['taxi']['semi']['arriveBy'] == "":
+        if state['belief_state']['taxi']['semi']['leaveAt'] == "" and state['belief_state']['taxi']['semi'][
+            'arriveBy'] == "":
             blank_info += ['Leave', 'Arrive']
-
 
         # Finish booking, tell user car type and phone number
         if len(blank_info) == 0:
+            # 收集到完整的departure，destination，leaveAt，arrive信息，表示可以进行订购
             if 'Taxi-Inform' not in DA:
                 DA['Taxi-Inform'] = []
             car = generate_car()
@@ -336,6 +354,7 @@ class SystemRule(StateTracker):
             return
 
         # Need essential info to finish booking
+        # 否者缺乏订购的必要信息，返回Request动作
         request_num = random.randint(0, 999999) % len(blank_info) + 1
         if 'Taxi-Request' not in DA:
             DA['Taxi-Request'] = []
@@ -347,7 +366,9 @@ class SystemRule(StateTracker):
         pass
 
     def _update_DA(self, user_act, user_action, state, DA):
-        """ Answer user's utterance about any domain other than taxi or train. """
+        """ Answer user's utterance about any domain other than taxi or train.
+            回应用户动作，根据数据库中是否满足用户要求，提供不同的回复
+        """
 
         domain, intent_type = user_act.split('-')
 
@@ -361,6 +382,7 @@ class SystemRule(StateTracker):
 
         # Respond to user's request
         if intent_type == 'Request':
+            # 优先反馈用户咨询的问题，根据数据库进行回复
             if self.recommend_flag > 1:
                 self.recommend_flag = -1
                 self.choice = ""
@@ -378,6 +400,7 @@ class SystemRule(StateTracker):
 
         else:
             # There's no result matching user's constraint
+            # 如果没有用户限制，返回Nooffer意图，同时一定概率返回Request，询问是否改变限制
             if len(kb_result) == 0:
                 if (domain + "-NoOffer") not in DA:
                     DA[domain + "-NoOffer"] = []
@@ -391,6 +414,7 @@ class SystemRule(StateTracker):
                 p = random.random()
 
                 # Ask user if he wants to change constraint
+                # 写死的概率，选择前三个slot告知用户是否需要切换
                 if p < 0.3:
                     req_num = min(random.randint(0, 999999) % len(DA[domain + "-NoOffer"]) + 1, 3)
                     if domain + "-Request" not in DA:
@@ -401,7 +425,7 @@ class SystemRule(StateTracker):
 
             # There's exactly one result matching user's constraint
             elif len(kb_result) == 1:
-
+                # 如果只有一个答案符合限制要求，则直接Inform答案
                 # Inform user about this result
                 if (domain + "-Inform") not in DA:
                     DA[domain + "-Inform"] = []
@@ -419,9 +443,9 @@ class SystemRule(StateTracker):
             # There are multiple resultes matching user's constraint
             else:
                 p = random.random()
-
+                # 如果有多个答案，Inform答案数量，同时Recommend其中一个答案,随机展示几个实体结果
                 # Recommend a choice from kb_list
-                if True: #p < 0.3:
+                if True:  # p < 0.3:
                     if (domain + "-Inform") not in DA:
                         DA[domain + "-Inform"] = []
                     if (domain + "-Recommend") not in DA:
@@ -495,6 +519,9 @@ class SystemRule(StateTracker):
                         DA[domain + "-Request"].append(req)
 
     def _update_train(self, user_act, user_action, state, DA):
+        """
+        相比于taxi，train需要多提供day的信息
+        """
         constraints = []
         for time in ['leaveAt', 'arriveBy']:
             if state['belief_state']['train']['semi'][time] != "":
@@ -525,7 +552,7 @@ class SystemRule(StateTracker):
         self.kb_result['Train'] = deepcopy(kb_result)
 
         if user_act == 'Train-Request':
-            del(DA['Train-Request'])
+            del (DA['Train-Request'])
             if 'Train-Inform' not in DA:
                 DA['Train-Inform'] = []
             for slot in user_action[user_act]:
@@ -544,7 +571,9 @@ class SystemRule(StateTracker):
                 del DA['Train-Request']
         elif len(kb_result) >= 1:
             if len(constraints) < 4:
+                # 条件没有完全达成
                 return
+            # 条件完全达成，则去掉Request的请求，直接提供订购信息
             if 'Train-Request' in DA:
                 del DA['Train-Request']
             if 'Train-OfferBook' not in DA:
@@ -570,26 +599,35 @@ class SystemRule(StateTracker):
                             DA['Booking-Book'] = [["Ref", "N/A"]]
         # TODO handle booking between multi turn
 
+
 def check_diff(last_state, state):
+    """
+    查询state和last_state的差异，返回state中执行的用户动作，或者用户更新的动作
+    """
     user_action = {}
     if last_state == {}:
         for domain in state['belief_state']:
+            # 将 belief_state 中book需要提供的信息导入user_action
             for slot in state['belief_state'][domain]['book']:
                 if slot != 'booked' and state['belief_state'][domain]['book'][slot] != '':
                     if (domain.capitalize() + "-Inform") not in user_action:
                         user_action[domain.capitalize() + "-Inform"] = []
                     if [REF_USR_DA[domain.capitalize()].get(slot, slot), state['belief_state'][domain]['book'][slot]] \
                             not in user_action[domain.capitalize() + "-Inform"]:
-                        user_action[domain.capitalize() + "-Inform"].append([REF_USR_DA[domain.capitalize()].get(slot, slot), \
-                                                                    state['belief_state'][domain]['book'][slot]])
+                        user_action[domain.capitalize() + "-Inform"].append(
+                            [REF_USR_DA[domain.capitalize()].get(slot, slot), \
+                             state['belief_state'][domain]['book'][slot]])
+            # 将 semi 按照同样的方式加入user_action
             for slot in state['belief_state'][domain]['semi']:
                 if state['belief_state'][domain]['semi'][slot] != "":
                     if (domain.capitalize() + "-Inform") not in user_action:
                         user_action[domain.capitalize() + "-Inform"] = []
                     if [REF_USR_DA[domain.capitalize()].get(slot, slot), state['belief_state'][domain]['semi'][slot]] \
                             not in user_action[domain.capitalize() + "-Inform"]:
-                        user_action[domain.capitalize() + "-Inform"].append([REF_USR_DA[domain.capitalize()].get(slot, slot), \
-                                                                    state['belief_state'][domain]['semi'][slot]])
+                        user_action[domain.capitalize() + "-Inform"].append(
+                            [REF_USR_DA[domain.capitalize()].get(slot, slot), \
+                             state['belief_state'][domain]['semi'][slot]])
+        # todo request_state 是啥?
         for domain in state['request_state']:
             for slot in state['request_state'][domain]:
                 if (domain.capitalize() + "-Request") not in user_action:
@@ -598,9 +636,11 @@ def check_diff(last_state, state):
                     user_action[domain.capitalize() + "-Request"].append([REF_USR_DA[domain].get(slot, slot), '?'])
 
     else:
+        # 如果last_state存在，则只需要记录slot-value变更的部分
         for domain in state['belief_state']:
             for slot in state['belief_state'][domain]['book']:
-                if slot != 'booked' and state['belief_state'][domain]['book'][slot] != last_state['belief_state'][domain]['book'][slot]:
+                if slot != 'booked' and state['belief_state'][domain]['book'][slot] != \
+                        last_state['belief_state'][domain]['book'][slot]:
                     if (domain.capitalize() + "-Inform") not in user_action:
                         user_action[domain.capitalize() + "-Inform"] = []
                     if [REF_USR_DA[domain.capitalize()].get(slot, slot),
@@ -615,27 +655,34 @@ def check_diff(last_state, state):
                     if (domain.capitalize() + "-Inform") not in user_action:
                         user_action[domain.capitalize() + "-Inform"] = []
                     if [REF_USR_DA[domain.capitalize()].get(slot, slot), state['belief_state'][domain]['semi'][slot]] \
-                        not in user_action[domain.capitalize() + "-Inform"]:
-                        user_action[domain.capitalize() + "-Inform"].append([REF_USR_DA[domain.capitalize()].get(slot, slot), \
-                                                                    state['belief_state'][domain]['semi'][slot]])
+                            not in user_action[domain.capitalize() + "-Inform"]:
+                        user_action[domain.capitalize() + "-Inform"].append(
+                            [REF_USR_DA[domain.capitalize()].get(slot, slot), \
+                             state['belief_state'][domain]['semi'][slot]])
         for domain in state['request_state']:
             for slot in state['request_state'][domain]:
                 if (domain not in last_state['request_state']) or (slot not in last_state['request_state'][domain]):
                     if (domain.capitalize() + "-Request") not in user_action:
                         user_action[domain.capitalize() + "-Request"] = []
-                    if [REF_USR_DA[domain.capitalize()].get(slot, slot), '?'] not in user_action[domain.capitalize() + "-Request"]:
-                        user_action[domain.capitalize() + "-Request"].append([REF_USR_DA[domain.capitalize()].get(slot, slot), '?'])
+                    if [REF_USR_DA[domain.capitalize()].get(slot, slot), '?'] not in user_action[
+                        domain.capitalize() + "-Request"]:
+                        user_action[domain.capitalize() + "-Request"].append(
+                            [REF_USR_DA[domain.capitalize()].get(slot, slot), '?'])
     return user_action
 
 
 def deduplicate(lst):
+    """
+    列表去重
+    """
     i = 0
     while i < len(lst):
-        if lst[i] in lst[0 : i]:
+        if lst[i] in lst[0: i]:
             lst.pop(i)
             i -= 1
         i += 1
     return lst
+
 
 def generate_phone_num(length):
     """ Generate a phone num. """
@@ -644,11 +691,13 @@ def generate_phone_num(length):
         string += digit[random.randint(0, 999999) % 10]
     return string
 
+
 def generate_car():
     """ Generate a car for taxi booking. """
     car_types = ["toyota", "skoda", "bmw", "honda", "ford", "audi", "lexus", "volvo", "volkswagen", "tesla"]
     p = random.randint(0, 999999) % len(car_types)
     return car_types[p]
+
 
 def init_belief_state():
     belief_state = {
@@ -733,6 +782,6 @@ def init_belief_state():
         }
     }
     state = {'user_action': {},
-     'belief_state': belief_state,
-     'request_state': {}}
+             'belief_state': belief_state,
+             'request_state': {}}
     return state

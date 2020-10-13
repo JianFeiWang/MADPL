@@ -136,6 +136,8 @@ class StateTracker(object):
     def update_belief_usr(self, old_s, a):
         """
         update belief/goal state with user action
+        更新 user_action, belief state goal state
+        invisible_domains, next_available_domain 这俩好像没啥用
         """
         s = deepcopy(old_s)
         a_index = torch.nonzero(a)  # get multiple da indices
