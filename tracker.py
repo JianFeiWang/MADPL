@@ -32,6 +32,9 @@ class StateTracker(object):
             self.lock_evalutor = False
     
     def get_entities(self, s, domain):
+        """
+        根据belief_state判断当前符合要求的实体
+        """
         origin = s['belief_state'][domain].items()
         constraint = []
         for k, v in origin:

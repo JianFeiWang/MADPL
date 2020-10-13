@@ -109,6 +109,7 @@ class MultiDiscretePolicy(nn.Module):
 class Policy(object):
     def __init__(self, env_cls, args, manager, cfg, process_num, character, pre=False, infer=False):
         """
+        专门用于更新预训练模型
         :param env_cls: env class or function, not instance, as we need to create several instance in class.
         :param args:
         :param manager:

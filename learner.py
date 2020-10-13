@@ -502,6 +502,7 @@ class Learner():
 
         # 1. sample data asynchronously
         # 随机采样得到训练数据,得到一个batch的数据,数据以轮为基本单位，每轮包含一次交互,用户和系统和执行一次动作
+        # 训练数据主要基于原始模型生成，因此数据的质量并不好，如何提升训练数据的质量？
         batch = self.sample(batchsz)
 
         policy_usr_loss, policy_sys_loss, vnet_usr_loss, vnet_sys_loss, vnet_glo_loss = 0., 0., 0., 0., 0.
