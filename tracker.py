@@ -19,6 +19,9 @@ class StateTracker(object):
         self.lock_evalutor = False
     
     def set_rollout(self, rollout):
+        """
+        会话完成时，完成evalutor的lock
+        """
         if rollout:
             self.save_time_step = self.time_step
             self.save_topic = self.topic
