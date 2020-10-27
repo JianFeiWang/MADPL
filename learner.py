@@ -118,7 +118,7 @@ def sampler(pid, queue, evt, env, policy_usr, policy_sys, batchsz):
                 next_s_vec_next = torch.Tensor(state_vectorize(next_s_next, env.cfg, env.db))
                 env.set_rollout(False)
 
-                r_usr = 20 if env.evaluator.inform_F1(ansbysys=False)[1] == 1. else -5
+                r_usr = 20 if env.evaluator.inform_F1(ans_by_sys=False)[1] == 1. else -5
                 r_sys = 20 if env.evaluator.task_success(False) else -5
                 r_global = 20 if env.evaluator.task_success() else -5
             else:
@@ -210,7 +210,7 @@ class Learner():
             self.target_update_interval = args.interval
 
             self.policy_sys_optim = optim.RMSprop(self.policy_sys.parameters(), lr=args.lr_policy)
-            self.policy_usr_optim = optim.RMSprop(self.policy_usr.parameters(), lr=args.lr_policy)
+            self.policy_usr_optim = optim.RMSprop(self.policy_usr.parameters(), lr=args.lr_policy_usr)
             self.vnet_optim = optim.RMSprop(self.vnet.parameters(), lr=args.lr_vnet, weight_decay=args.weight_decay)
 
         self.gamma = args.gamma
@@ -352,16 +352,16 @@ class Learner():
         turn_tot, inform_tot, match_tot, success_tot = [], [], [], []
         for seed in range(N):
             s = env.reset(seed)
-            print('seed', seed)
-            print('goal', env.evaluator.goal)
+            #print('seed', seed)
+            #print('goal', env.evaluator.goal)
             for t in range(traj_len):
                 s_vec = torch.Tensor(state_vectorize_user(s, env.cfg, env.evaluator.cur_domain)).to(device=DEVICE)
                 # mode with policy during evaluation
                 a = self.policy_usr.select_action(s_vec, False)
                 next_s = env.step(s, a.cpu())
                 s = next_s
-                print('usr', s['user_action'])
-                print('sys', s['sys_action'])
+            #    print('usr', s['user_action'])
+             #   print('sys', s['sys_action'])
                 done = s['others']['terminal']
                 if done:
                     break
@@ -370,18 +370,18 @@ class Learner():
             turn_tot.append(env.time_step // 2)
             match_tot += env.evaluator.match_rate(aggregate=False)
             inform_tot.append(env.evaluator.inform_F1(aggregate=False))
-            print('turn', env.time_step // 2)
+            #print('turn', env.time_step // 2)
             match_session = env.evaluator.match_rate()
-            print('match', match_session)
+           # print('match', match_session)
             inform_session = env.evaluator.inform_F1()
-            print('inform', inform_session)
+            #print('inform', inform_session)
             if (match_session == 1 and inform_session[1] == 1) \
                     or (match_session == 1 and inform_session[1] is None) \
                     or (match_session is None and inform_session[1] == 1):
-                print('success', 1)
+             #   print('success', 1)
                 success_tot.append(1)
             else:
-                print('success', 0)
+              #  print('success', 0)
                 success_tot.append(0)
 
         logging.info('turn {}'.format(np.mean(turn_tot)))
@@ -553,7 +553,9 @@ class Learner():
 
         # 2. get mini-batch for optimizing
         # 按照更新次数，切分数据
+        print("\nbatchsz:", batchsz, "optim_batchsz:", self.optim_batchsz,"\n")
         optim_chunk_num = int(np.ceil(batchsz / self.optim_batchsz))
+
         # chunk the optim_batch for total batch
         s_usr_shuf, a_usr_shuf, r_usr_shuf, s_usr_next_shuf, s_sys_shuf, a_sys_shuf, r_sys_shuf, s_sys_next_shuf, terminal_shuf, r_glo_shuf = \
             torch.chunk(s_usr_shuf, optim_chunk_num), torch.chunk(a_usr_shuf, optim_chunk_num), torch.chunk(r_usr_shuf,

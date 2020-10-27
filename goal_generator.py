@@ -143,19 +143,20 @@ class GoalGenerator:
                  boldify=False):
         """
         生成各种分布：
+        cfg 这里只用于为dbquery提供地址，并没有提供对数据分布进行控制
         self.ind_slot_dist: 独立实体分布
         self.ind_slot_value_dist: 独立实体值分布
         self.domain_ordering_dist: domain请求分布
         self.book_dist: 订阅分布
         Args:
-            goal_model_path: path to a goal model 
-            corpus_path: path to a dialog corpus to build a goal model 
+            goal_model_path: path to a goal model
+            corpus_path: path to a dialog corpus to build a goal model
         """
         self.dbquery = DBQuery(data_dir, cfg)
         self.goal_model_path = data_dir + '/' + goal_model_path
         self.corpus_path = data_dir + '/' + corpus_path if corpus_path is not None else None
         self.boldify = do_boldify if boldify else null_boldify
-        if os.path.exists(self.goal_model_path):
+        if False and os.path.exists(self.goal_model_path):
             with open(self.goal_model_path, 'rb') as f:
                 self.ind_slot_dist, self.ind_slot_value_dist, self.domain_ordering_dist, self.book_dist = pickle.load(f)
             logging.info('Loading goal model is done')
@@ -164,12 +165,14 @@ class GoalGenerator:
             logging.info('Building goal model is done')
 
         # remove some slot
-        del self.ind_slot_dist['police']['reqt']['postcode']
-        del self.ind_slot_value_dist['police']['reqt']['postcode']
-        del self.ind_slot_dist['hospital']['reqt']['postcode']
-        del self.ind_slot_value_dist['hospital']['reqt']['postcode']
-        del self.ind_slot_dist['hospital']['reqt']['address']
-        del self.ind_slot_value_dist['hospital']['reqt']['address']
+        if 'police' in self.ind_slot_dist:
+            del self.ind_slot_dist['police']['reqt']['postcode']
+            del self.ind_slot_value_dist['police']['reqt']['postcode']
+        if 'hospital' in self.ind_slot_dist:
+            del self.ind_slot_dist['hospital']['reqt']['postcode']
+            del self.ind_slot_value_dist['hospital']['reqt']['postcode']
+            del self.ind_slot_dist['hospital']['reqt']['address']
+            del self.ind_slot_value_dist['hospital']['reqt']['address']
 
     def _build_goal_model(self):
         with open(self.corpus_path) as f:
@@ -183,6 +186,12 @@ class GoalGenerator:
         domain_orderings = []
         for d in dialogs:
             d_domains = _get_dialog_domains(dialogs[d])
+
+            # 直接跳过多场景切换问题, 如果需要增加对多场景切换问题的研究，则需要注释掉这段
+            if len(d_domains) > 1 or len(d_domains) == 0:
+                continue
+            # print("d_domains: ", d_domains)
+
             first_index = []
             # 找到每个domain的首行message
             for domain in d_domains:
@@ -284,6 +293,12 @@ class GoalGenerator:
                         self.ind_slot_value_dist[domain]['book'][slot][val] = ind_slot_value_cnt[domain]['book'][slot][
                                                                                   val] / slot_total
             self.book_dist[domain] = book_cnt[domain] / len(dialogs)
+
+        print()
+        print("ind_slot_dist:", self.ind_slot_dist)
+        print("domain_ordering_dist:", self.domain_ordering_dist)
+        print("book_dist:", self.book_dist)
+        print()
 
         with open(self.goal_model_path, 'wb') as f:
             pickle.dump((self.ind_slot_dist, self.ind_slot_value_dist, self.domain_ordering_dist, self.book_dist), f)

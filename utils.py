@@ -33,6 +33,7 @@ def get_parser():
     parser.add_argument('--policy_weight_sys', type=float, default=2.5, help='Pos weight on system policy pretraining')
     parser.add_argument('--policy_weight_usr', type=float, default=4, help='Pos weight on user policy pretraining')
     parser.add_argument('--lr_policy', type=float, default=1e-3, help='Learning rate of dialog policy')
+    parser.add_argument('--lr_policy_usr', type=float, default=5e-4, help='Learning rate of dialog policy')
     parser.add_argument('--lr_vnet', type=float, default=3e-5, help='Learning rate of value network')
     parser.add_argument('--weight_decay', type=float, default=1e-5, help='Weight decay (L2 penalty)')
     parser.add_argument('--gamma', type=float, default=0.99, help='Discounted factor')
@@ -64,7 +65,7 @@ def init_session(key, cfg):
     turn_data['sys_action'] = dict()
     turn_data['user_action'] = dict()
 
-    # belief & goal state 
+    # belief & goal state
     turn_data['belief_state'] = {}
     turn_data['goal_state'] = {}
     for domain in cfg.belief_domains:
@@ -157,6 +158,7 @@ def reload(state, goal, domain):
 
 
 def init_logging_handler(log_dir, extra=''):
+    """提供日志记录的路径"""
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
     current_time = time.strftime("%Y-%m-%d-%H-%M-%S", time.localtime())
@@ -204,7 +206,7 @@ def check_constraint(slot, val_usr, val_sys):
 
 def state_vectorize(state, config, db, noisy=False):
     """
-    state: dict_keys(['user_action', 'sys_action', 'select_entity', 'belief_state', 'others']) 
+    state: dict_keys(['user_action', 'sys_action', 'select_entity', 'belief_state', 'others'])
     state_vec: [user_act, last_sys_act, inform, request, book, degree, final]
     """
     user_act = np.zeros(len(config.da_usr))
@@ -261,7 +263,7 @@ def action_vectorize(action, config):
 
 def state_vectorize_user(state, config, current_domain):
     """
-    state: dict_keys(['user_action', 'sys_action', 'user_goal', 'goal_state', 'others']) 
+    state: dict_keys(['user_action', 'sys_action', 'user_goal', 'goal_state', 'others'])
     state_vec: [sys_act, last_user_act, inform, request, inconsistency, nooffer]
     """
     # 系统动作

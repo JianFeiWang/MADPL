@@ -114,7 +114,13 @@ class DataManager():
         self.goal = {}
 
         self.data_dir_new = data_dir + '/processed_data'
-        if os.path.exists(self.data_dir_new):
+
+        # **********************
+        # 实验一 2020/10/15
+        # 对原始数据，按照domain划分为不同的文件，对于对话中同时具有多个domain的暂时不做处理。
+        # 验证MADPL对单个domain的效果
+        # **********************
+        if False and os.path.exists(self.data_dir_new):
             # 对于已经划分并转化后的train valid test的文件进行读取
             logging.info('Load processed data file')
             for part in ['train', 'valid', 'test']:
@@ -174,6 +180,7 @@ class DataManager():
             for line in f:
                 testList.append(line.split('.')[0])
 
+        num_sess = 0
         for k_sess in origin_data:
             sess = origin_data[k_sess]
             if k_sess in valList:
@@ -188,6 +195,23 @@ class DataManager():
             # goal_state
             goal_state = turn_data['goal_state']
             init_goal(session_data, goal_state, sess['goal'], cfg)
+            # 直接跳过多domain场景
+            if "SNG" not in k_sess:
+                continue
+
+            # 判断如果数据中没有指定domain场景，则不使用该数据w
+            contain_domain=False
+            for domain in session_data:
+                content = session_data[domain]
+                if domain in cfg.belief_domains and len(content) > 0:
+                    contain_domain=True
+                    break
+            if contain_domain is False:
+                continue
+
+            num_sess += 1
+            print("session id:", k_sess," ", num_sess)
+
             # goal
             # 完整的用户目标， goal 和 goal_state 的差异在于， goal为任务最终的目标， goal_state 表示用户目标在某一时刻的状态
             self.goal[part][k_sess] = deepcopy(session_data)
@@ -311,6 +335,9 @@ class DataManager():
                 return list(obj)
             raise TypeError
 
+        # 实验一
+        # 按照单个domain划分
+
         os.makedirs(data_dir_new)
         for part in ['train', 'valid', 'test']:
             with open(data_dir_new + '/' + part + '.json', 'w') as f:
@@ -430,7 +457,7 @@ class DataManager():
                 next_turn_data['goal_state'] = datas[idx + 1]['final_goal_state']
                 next_s.append(torch.Tensor(state_vectorize_user(next_turn_data, cfg, evaluator.cur_domain)))
                 # 对于用户侧任务是否成功，采用inform_F1进行判决, 1表示的是召回率，就是用户目标的所有需求和提供都已经完成了
-                reward = 20 if evaluator.inform_F1(ansbysys=False)[1] == 1. else -5
+                reward = 20 if evaluator.inform_F1(ans_by_sys=False)[1] == 1. else -5
                 r.append(reward)
                 t.append(1)
             else:

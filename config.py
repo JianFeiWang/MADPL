@@ -96,11 +96,13 @@ class Config():
         # 用户执行动作 + 是否完成会话
         self.a_dim_usr = len(self.da_usr) + 1
 
+        print("++++++++++++++ state sys dim {} state user dim {} action sys dim {} action user dim {} ++++++++++++++++".format(self.s_dim, self.s_dim_usr, self.a_dim, self.a_dim_usr))
+
 
 class MultiWozConfig(Config):
 
     def __init__(self):
-        self.domain = ['general', 'train', 'booking', 'hotel', 'restaurant', 'attraction', 'taxi', 'police', 'hospital']
+        self.domain = ['general','booking','taxi']
         self.intent = ['inform', 'request', 'reqmore', 'bye', 'book', 'welcome', 'recommend', 'offerbook', 'nooffer',
                        'offerbooked', 'greet', 'select', 'nobook', 'thank']
         self.slot = ['none', 'name', 'area', 'choice', 'type', 'price', 'ref', 'leave', 'addr', 'phone', 'food', 'day',
@@ -242,6 +244,54 @@ class MultiWozConfig(Config):
             'hospital': {'address': 'addr', 'department': 'department', 'phone': 'phone', 'postcode': 'post'},
             'police': {'address': 'addr', 'phone': 'phone', 'postcode': 'post'}}
 
+        self.squash_da() # 用于重新缩小空间
         self.init_inform_request()  # call this first!
         self.init_dict()
         self.init_dim()
+
+
+    def squash_da(self):
+        """
+        根据domain压缩dialog action的space
+        """
+        # 更新系统动作空间
+        da_t = []
+        for da in self.da:
+            domain = da.split("-")[0]
+            if domain in self.domain:
+                da_t.append(da)
+        self.da = da_t
+        print("da:", self.da)
+        da_usr_t = []
+        for da_usr in self.da_usr:
+            domain = da_usr.split("-")[0]
+            if domain in self.domain:
+                da_usr_t.append(da_usr)
+        self.da_usr = da_usr_t
+        print("da_usr:", self.da_usr)
+        da_goal_t = []
+        for da_goal in self.da_goal:
+            domain = da_goal.split("-")[0]
+            if domain in self.domain:
+                da_goal_t.append(da_usr)
+        self.da_goal = da_goal_t
+        print("da_goal:", self.da_goal)
+        db_domain_t = []
+        for d in self.db_domains:
+            if d in self.domain:
+                db_domain_t.append(d)
+        self.db_domains = db_domain_t
+        print("db_domains:", self.db_domains)
+        belief_domain_t=[]
+        for d in self.belief_domains:
+            if d in self.domain:
+                belief_domain_t.append(d)
+        self.belief_domains = belief_domain_t
+        print("belief_domains:", self.belief_domains)
+
+
+
+
+
+
+
