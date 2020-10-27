@@ -51,7 +51,7 @@ if __name__ == '__main__':
     args, _ = parser.parse_known_args(argv)
 
     if args.config == 'multiwoz':
-        config = MultiWozConfig()
+        config = MultiWozConfig(args.domain)
     else:
         raise NotImplementedError('Config of the dataset {} not implemented'.format(args.config))
 
@@ -66,7 +66,7 @@ if __name__ == '__main__':
     if args.pretrain:
         logging.debug('pretrain')
 
-        manager = DataManager(args.data_dir, config)
+        manager = DataManager(args.data_dir, config, args.domain)
         processes = []
         process_args = (args, manager, config)
         processes.append(mp.Process(target=worker_policy_sys, args=process_args))

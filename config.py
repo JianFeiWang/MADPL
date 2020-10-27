@@ -18,6 +18,7 @@ class Config():
         self.data_file = ''
         self.db_domains = []  # 定义可以被从数据库检索的domain
         self.belief_domains = []  # 定义用户可以咨询和订阅的domain信息， 如果想控制用户的请求domain的限制，改变它就对了
+        self.d = None  # 用于记录单domain的场景
 
     def init_inform_request(self):
         """
@@ -101,8 +102,16 @@ class Config():
 
 class MultiWozConfig(Config):
 
-    def __init__(self):
-        self.domain = ['general','booking','taxi']
+    def __init__(self, domain=None):
+        if domain is None:
+            self.domain = ['general', 'train', 'booking', 'hotel', 'restaurant', 'attraction', 'taxi', 'police', 'hospital']
+        elif isinstance(domain, str):
+            self.domain = ['general','booking', domain]
+            self.d = domain
+        else:
+            print(domain)
+            exit("domain error")
+
         self.intent = ['inform', 'request', 'reqmore', 'bye', 'book', 'welcome', 'recommend', 'offerbook', 'nooffer',
                        'offerbooked', 'greet', 'select', 'nobook', 'thank']
         self.slot = ['none', 'name', 'area', 'choice', 'type', 'price', 'ref', 'leave', 'addr', 'phone', 'food', 'day',

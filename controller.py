@@ -15,7 +15,7 @@ class Controller(StateTracker):
         """
         super(Controller, self).__init__(data_dir, config)
         self.goal_gen = GoalGenerator(data_dir, config,
-                                      goal_model_path='processed_data/goal_model.pkl', # 重新生成数据分布
+                                      goal_model_path='processed_data_'+config.d+'/goal_model.pkl', # 重新生成数据分布
                                       corpus_path=config.data_file)
 
     def reset(self, random_seed=None):

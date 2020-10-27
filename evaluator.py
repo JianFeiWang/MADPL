@@ -31,7 +31,7 @@ class MultiWozEvaluator():
     评估 MultiWoz 任务是否完成
     """
 
-    def __init__(self, data_dir):
+    def __init__(self, data_dir, domain=None):
         self.sys_da_array = []
         self.usr_da_array = []
         self.goal = {}
@@ -39,7 +39,7 @@ class MultiWozEvaluator():
         self.cur_domain = ''
         self.complete_domain = []
         from config import MultiWozConfig
-        cfg = MultiWozConfig()
+        cfg = MultiWozConfig(domain)
         self.belief_domains = cfg.belief_domains
         self.mapping = cfg.mapping
         db = DBQuery(data_dir, cfg)

@@ -40,6 +40,8 @@ def get_parser():
     parser.add_argument('--clip', type=float, default=10, help='Gradient clipping')
     parser.add_argument('--interval', type=int, default=400, help='Update interval of target network')
 
+    parser.add_argument('--domain', type=str, default=None, help="选定需要训练的domain")
+
     return parser
 
 

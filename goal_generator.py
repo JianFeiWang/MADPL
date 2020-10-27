@@ -10,7 +10,6 @@ import logging
 
 from dbquery import DBQuery
 
-domains = {'attraction', 'hotel', 'restaurant', 'train', 'taxi', 'hospital', 'police'}
 days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
 
 # todo 通过keywords来判断domain?
@@ -152,6 +151,12 @@ class GoalGenerator:
             goal_model_path: path to a goal model
             corpus_path: path to a dialog corpus to build a goal model
         """
+        self.cfg = cfg
+        if self.cfg.d:
+            self.domains=[self.cfg.d]
+        else:
+            print(self.cfg)
+            self.domains = {'attraction', 'hotel', 'restaurant', 'train', 'taxi', 'hospital', 'police'}
         self.dbquery = DBQuery(data_dir, cfg)
         self.goal_model_path = data_dir + '/' + goal_model_path
         self.corpus_path = data_dir + '/' + corpus_path if corpus_path is not None else None
@@ -181,15 +186,17 @@ class GoalGenerator:
         # domain ordering
         def _get_dialog_domains(dialog):
             """收集dialog中的有效domains"""
-            return list(filter(lambda x: x in domains and len(dialog['goal'][x]) > 0, dialog['goal']))
+            return list(filter(lambda x: x in self.domains and len(dialog['goal'][x]) > 0, dialog['goal']))
 
         domain_orderings = []
         for d in dialogs:
             d_domains = _get_dialog_domains(dialogs[d])
 
+            if self.cfg.d:
             # 直接跳过多场景切换问题, 如果需要增加对多场景切换问题的研究，则需要注释掉这段
-            if len(d_domains) > 1 or len(d_domains) == 0:
-                continue
+                if len(d_domains) > 1 or len(d_domains) == 0:
+                    continue
+
             # print("d_domains: ", d_domains)
 
             first_index = []
@@ -210,13 +217,13 @@ class GoalGenerator:
             self.domain_ordering_dist[order] = domain_ordering_cnt[order] / sum(domain_ordering_cnt.values())
 
         # independent goal slot distribution
-        ind_slot_value_cnt = dict([(domain, {}) for domain in domains])
+        ind_slot_value_cnt = dict([(domain, {}) for domain in self.domains])
         domain_cnt = Counter()
         book_cnt = Counter()
 
         # 对各个用户的用户目标进行统计
         for d in dialogs:
-            for domain in domains:
+            for domain in self.domains:
                 # 统计domain出现的次数
                 if dialogs[d]['goal'][domain] != {}:
                     domain_cnt[domain] += 1
@@ -257,9 +264,9 @@ class GoalGenerator:
         # 收集完成ind_slot_value_cnt 和 domain_cnt 和 book_cnt 的信息
         # 计算得到 ind_slot_dist ind_slot_value_dist 基于不同domain的分布
         self.ind_slot_value_dist = deepcopy(ind_slot_value_cnt)
-        self.ind_slot_dist = dict([(domain, {}) for domain in domains])
+        self.ind_slot_dist = dict([(domain, {}) for domain in self.domains])
         self.book_dist = {}
-        for domain in domains:
+        for domain in self.domains:
             if 'info' in ind_slot_value_cnt[domain]:
                 for slot in ind_slot_value_cnt[domain]['info']:
                     if 'info' not in self.ind_slot_dist[domain]:

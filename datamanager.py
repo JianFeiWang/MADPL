@@ -104,7 +104,7 @@ def add_domain_mask(data):
 class DataManager():
     """Offline data manager"""
 
-    def __init__(self, data_dir, cfg):
+    def __init__(self, data_dir, cfg, domain=None):
         """
         DataManager的两种加载方式，第一种是直接通过源文件进行加载，还有一种是通过已经处理好的数据进行加载
         DataManager 只会在预训练的时候使用到
@@ -113,7 +113,10 @@ class DataManager():
         self.data = {}
         self.goal = {}
 
-        self.data_dir_new = data_dir + '/processed_data'
+        if domain:
+            self.data_dir_new = data_dir + '/processed_data_' + domain
+        else:
+            self.data_dir_new = data_dir + '/processed_data'
 
         # **********************
         # 实验一 2020/10/15
@@ -210,7 +213,6 @@ class DataManager():
                 continue
 
             num_sess += 1
-            print("session id:", k_sess," ", num_sess)
 
             # goal
             # 完整的用户目标， goal 和 goal_state 的差异在于， goal为任务最终的目标， goal_state 表示用户目标在某一时刻的状态
@@ -327,7 +329,7 @@ class DataManager():
                     turn_data['final_goal_state'] = goal_state
 
                 self.data[part].append(deepcopy(turn_data))
-
+        print("session number: ",num_sess)
         add_domain_mask(self.data)
 
         def _set_default(obj):
@@ -358,7 +360,7 @@ class DataManager():
         # 系统状态+系统动作+回报+上一轮系统状态+末轮标志位
         s, a, r, next_s, t = [], [], [], [], []
         # evaluator 全称记录数据
-        evaluator = MultiWozEvaluator(data_dir)
+        evaluator = MultiWozEvaluator(data_dir, cfg.d)
         for idx, turn_data in enumerate(datas):
             # user
             # 用户侧并没有做数据的更新操作
@@ -423,7 +425,7 @@ class DataManager():
         datas = self.data[part]
         goals = self.goal[part]
         s, a, r, next_s, t = [], [], [], [], []
-        evaluator = MultiWozEvaluator(data_dir)
+        evaluator = MultiWozEvaluator(data_dir, cfg.d)
         current_goal = None
         for idx, turn_data in enumerate(datas):
             if turn_data['others']['turn'] % 2 == 1:
@@ -486,7 +488,7 @@ class DataManager():
         datas = self.data[part]
         goals = self.goal[part]
         s_usr, s_sys, r_g, next_s_usr, next_s_sys, t = [], [], [], [], [], []
-        evaluator = MultiWozEvaluator(data_dir)
+        evaluator = MultiWozEvaluator(data_dir, cfg.d)
         for idx, turn_data in enumerate(datas):
             if turn_data['others']['turn'] % 2 == 0:
                 if turn_data['others']['turn'] == 0:
