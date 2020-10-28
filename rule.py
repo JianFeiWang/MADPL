@@ -124,7 +124,7 @@ class SystemRule(StateTracker):
         super(SystemRule, self).__init__(data_dir, cfg)
         self.last_state = {}
         self.goal_gen = GoalGenerator(data_dir, cfg,
-                                      goal_model_path='processed_data/goal_model.pkl',
+                                      goal_model_path='processed_data'+cfg.d+'/goal_model.pkl',
                                       corpus_path=cfg.data_file)
 
     def reset(self, random_seed=None):

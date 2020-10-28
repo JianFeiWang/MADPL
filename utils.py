@@ -104,6 +104,8 @@ def init_goal(goal, state, off_goal, cfg):
                     slot = cfg.map_inverse[domain][slot]
                     # single slot value for user goal
                     inform_da = domain + '-' + slot
+                    print("inform_da ", inform_da)
+                    print("cfg.inform_da_usr ", cfg.inform_da_usr)
                     if inform_da in cfg.inform_da_usr:
                         goal[domain]['final'][slot] = goal[domain][slot]
                         goal[domain][slot] = value

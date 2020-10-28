@@ -161,7 +161,7 @@ class GoalGenerator:
         self.goal_model_path = data_dir + '/' + goal_model_path
         self.corpus_path = data_dir + '/' + corpus_path if corpus_path is not None else None
         self.boldify = do_boldify if boldify else null_boldify
-        if False and os.path.exists(self.goal_model_path):
+        if os.path.exists(self.goal_model_path):
             with open(self.goal_model_path, 'rb') as f:
                 self.ind_slot_dist, self.ind_slot_value_dist, self.domain_ordering_dist, self.book_dist = pickle.load(f)
             logging.info('Loading goal model is done')
@@ -301,11 +301,16 @@ class GoalGenerator:
                                                                                   val] / slot_total
             self.book_dist[domain] = book_cnt[domain] / len(dialogs)
 
-        print()
-        print("ind_slot_dist:", self.ind_slot_dist)
-        print("domain_ordering_dist:", self.domain_ordering_dist)
-        print("book_dist:", self.book_dist)
-        print()
+        # print()
+        # print("ind_slot_dist:", self.ind_slot_dist)
+        # print("ind_slot_value_dist ", self.ind_slot_value_dist)
+        # print("domain_ordering_dist:", self.domain_ordering_dist)
+        # print("book_dist:", self.book_dist)
+        # print()
+
+        goal_model_path_dir = os.path.dirname(self.goal_model_path)
+        if len(goal_model_path_dir)>0 and not os.path.exists(goal_model_path_dir):
+            os.makedirs(goal_model_path_dir)
 
         with open(self.goal_model_path, 'wb') as f:
             pickle.dump((self.ind_slot_dist, self.ind_slot_value_dist, self.domain_ordering_dist, self.book_dist), f)
@@ -361,13 +366,14 @@ class GoalGenerator:
                 # 如果出发地和目的地一样，一定概率重新采样
                 if domain in ['taxi', 'train'] and \
                         'departure' in domain_goal['info'] and \
-                        'destination' in domain_goal['info'] and \
-                        domain_goal['info']['departure'] == domain_goal['info']['destination']:
-                    if random.random() < (cnt_slot['info']['departure'] / (
-                            cnt_slot['info']['departure'] + cnt_slot['info']['destination'])):
-                        domain_goal['info']['departure'] = nomial_sample(cnt_slot_value['info']['departure'])
-                    else:
-                        domain_goal['info']['destination'] = nomial_sample(cnt_slot_value['info']['destination'])
+                        'destination' in domain_goal['info']:
+                    while domain_goal['info']['departure'] == domain_goal['info']['destination']:
+                        if random.random() < (cnt_slot['info']['departure'] / (
+                                cnt_slot['info']['departure'] + cnt_slot['info']['destination'])):
+                            domain_goal['info']['departure'] = nomial_sample(cnt_slot_value['info']['departure'])
+                        else:
+                            domain_goal['info']['destination'] = nomial_sample(cnt_slot_value['info']['destination'])
+#                        print("same destination departure")
                 if domain_goal['info'] == {}:
                     # 如果没有用户提供的信息，则重新生成
                     continue

@@ -41,8 +41,13 @@ class StateTracker(object):
         for k, v in origin:
             if v != '?' and k in self.cfg.mapping[domain]:
                 constraint.append((self.cfg.mapping[domain][k], v))
-        entities = self.db.query(domain, constraint)
-        random.shuffle(entities)
+
+        ignore_open = True
+        if domain == "train":
+            ignore_open = False
+
+        entities = self.db.query(domain, constraint, ignore_open=ignore_open)
+        #random.shuffle(entities)
         return entities
 
     def update_belief_sys(self, old_s, a):

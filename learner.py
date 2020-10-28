@@ -295,7 +295,8 @@ class Learner():
         traj_len = 40
         turn_tot, inform_tot, match_tot, success_tot = [], [], [], []
         for seed in range(N):
-            s = env.reset(seed)
+#            s = env.reset(seed)
+            s = env.reset()
             print('seed', seed)
             print('goal', env.goal.domain_goals)
             print('usr', s['user_action'])

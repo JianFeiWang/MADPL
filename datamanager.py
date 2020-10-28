@@ -123,7 +123,7 @@ class DataManager():
         # 对原始数据，按照domain划分为不同的文件，对于对话中同时具有多个domain的暂时不做处理。
         # 验证MADPL对单个domain的效果
         # **********************
-        if False and os.path.exists(self.data_dir_new):
+        if os.path.exists(self.data_dir_new):
             # 对于已经划分并转化后的train valid test的文件进行读取
             logging.info('Load processed data file')
             for part in ['train', 'valid', 'test']:

@@ -55,6 +55,7 @@ class Config():
                 self.inform_da_usr.append(key)
             else:
                 self.request_da_usr.append(key)
+        print("multiwoz-inform_da_usr ", self.inform_da_usr)
 
     def init_dict(self):
         self.domain2idx = dict((a, i) for i, a in enumerate(self.belief_domains))
@@ -89,7 +90,7 @@ class Config():
         self.s_dim = len(self.da) + len(self.da_usr) + len(self.inform_da) + len(self.request_da) + len(
             self.belief_domains) + 6 * len(self.db_domains) + 1  # len(self.requestable) + 1
         # 系统执行动作+用户执行动作+目标inform信息*2+目标request信息+用户关心的domains信息
-        # todo 需要关注为什么inform_da_usr 的维度需要乘以2
+        # 需要关注为什么inform_da_usr 的维度需要乘以2, 因为用户提供的信息中有一次fail的可能
         self.s_dim_usr = len(self.da) + len(self.da_usr) + len(self.inform_da_usr) * 2 + len(self.request_da_usr) + len(
             self.belief_domains)  # *2
         # 系统执行动作
@@ -282,7 +283,7 @@ class MultiWozConfig(Config):
         for da_goal in self.da_goal:
             domain = da_goal.split("-")[0]
             if domain in self.domain:
-                da_goal_t.append(da_usr)
+                da_goal_t.append(da_goal)
         self.da_goal = da_goal_t
         print("da_goal:", self.da_goal)
         db_domain_t = []

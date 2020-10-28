@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-@author: keshuichonglx 
+@author: keshuichonglx
 """
 
 import json
@@ -135,7 +135,7 @@ class UserAgenda(StateTracker):
         # 根据 goal_model.pkl 构建用户目标生成器，
         # goal_model.pkl 中记录了真实数据中的 domain，book，slot， slot-value的出现概率
         self.goal_generator = GoalGenerator(data_dir, cfg,
-                                            goal_model_path='processed_data/goal_model.pkl',
+                                            goal_model_path='processed_data_' +cfg.d + '/goal_model.pkl',
                                             corpus_path=cfg.data_file)
 
         self.goal = None
@@ -194,6 +194,10 @@ class UserAgenda(StateTracker):
         # 状态中包含 下一个domain， 下一个之后的所有domain， 用户目标，目标状态等
         dummy_state, dummy_goal = init_session(-1, self.cfg)
         init_goal(dummy_goal, dummy_state['goal_state'], self.goal.domain_goals, self.cfg)
+
+        print("-domain_goals ", self.goal.domain_goals)
+        print("-user_goal ", dummy_goal)
+
         domain_ordering = self.goal.domains
         dummy_state['next_available_domain'] = domain_ordering[0]
         dummy_state['invisible_domains'] = domain_ordering[1:]
@@ -254,6 +258,7 @@ class UserAgenda(StateTracker):
         # A -> A' + user_action
         # 根据用户代理器当前记录的状态得到对应的用户动作
         action = self.agenda.get_action(self.max_initiative)
+        #print("get_action ", action)
 
         # Is there any action to say?
         # 如果代理器没有待执行的任务，则会话终止
@@ -498,6 +503,7 @@ class Agenda(object):
                     self.__push(domain + '-inform', slot, goal.domain_goals[domain]['info'][slot])
 
         self.cur_domain = None
+        print("Agenda ",self.__stack)
 
     def update(self, sys_action, goal: Goal):
         """
